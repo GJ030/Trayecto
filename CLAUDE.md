@@ -9,7 +9,7 @@ Los datos viven en `localStorage` (caché) y, opcionalmente, en un archivo `tray
 - **Inicio**: último viaje (mapa), resumen semanal, rendimiento promedio y gasto mensual.
 - **Viajes**: tabla ordenable y filtrable, detalle con mapa interactivo, **reproducción de la ruta**, tarjeta PNG, edición (tecla `E`) y borrado.
 - **Gasolina**: cargas con km/L calculado entre tanques llenos; alta, edición (lápiz) y borrado.
-- **Lugares**: mapa con tres capas (Lugares / Todas las rutas / Mapa de calor), tiempos de traslado por trayecto, **ubicar o mover lugares** en el mapa.
+- **Lugares**: mapa con tres capas (Lugares / Todas las rutas / Mapa de calor), tiempos de traslado por trayecto, **ubicar o mover lugares** en el mapa y, por cada lugar, un menú de acciones (⋮): **Editar**, **Mover ubicación**, **Fusionar con…** y **Eliminar**, con **Deshacer** durante 6 s (también `Ctrl+Z`).
 - **Estadísticas**, **Vehículos**, **Ajustes** (preferencias, atajos, restablecer/borrar datos) y **Respaldo** (JSON, CSV, **carpeta de datos** y respaldos automáticos).
 - **Indicador de guardado** al pie del menú lateral (también contraído) y aviso discreto bajo la barra superior cuando la carpeta necesita atención.
 - Atajos: `N` viaje nuevo, `G` carga nueva, `E` editar el viaje seleccionado, `/` buscar, `Esc` cerrar, `Ctrl+Enter` guardar en un panel, `↑ ↓` moverse entre viajes.
@@ -30,6 +30,7 @@ Todo el JavaScript está en un solo IIFE al final del archivo, dividido en secci
 | Gráficas | `barChart`, `lineChart`, `sparkline` |
 | Vistas | `renderInicio`, `renderViajes`, `renderGasolina`, `renderLugares`, `renderEstadisticas`, `renderVehiculos`, `renderAjustes`, `renderRespaldo` |
 | Render y navegación | `render`, `go`, menú lateral, búsqueda |
+| Lugares: editar, eliminar y fusionar | `tripsOf`, `togglePlaceMenu`/`closePlaceMenu`, `openPlacePanel`/`savePlace`, `deletePlace`/`removePlace`, `mergeDialog`/`mergePlace`, `showUndo`/`runUndo`, `clearPlaceSel` |
 | Panel lateral | `openDrawer`/`closeDrawer`/`requestCloseDrawer`, `guardChanges`, autocompletado, `openTripPanel(edit)`, `openFuelPanel(edit)`, `saveTrip`, `saveFuel`, `showTripSummary` |
 | PNG con canvas | `tripCanvas` (ruta real de `points` con degradado; sin points usa `routePts`) |
 | Diálogo y avisos | `confirmDialog`, `toast` |
@@ -58,6 +59,17 @@ ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ...
 - `tripPoints` es determinista (semilla = id del viaje): recorrido ortogonal tipo calle, puntos y velocidades coherentes con la hora de salida/llegada; el promedio de `speed` coincide con la velocidad del viaje. Devuelve `[]` si origen o destino no tienen lat/lng.
 - **Migración v1 → v2** (`migrate`, también al importar): los lugares de ejemplo reciben lat/lng por nombre solo si conservan su posición original; se generan los `points` y `pointsSource` que falten. La clave `trayecto:v1` se borra únicamente cuando los datos migrados ya quedaron guardados en `trayecto:v2`.
 - **Respaldo JSON**: `{ app, version, exportedAt, data }`. Al importar se validan lat/lng (rango), se descartan puntos inválidos, se regeneran los que falten y se rechaza una versión mayor a 2. Los CSV (viajes, cargas) llevan BOM UTF-8 y neutralizan celdas que empiezan con `= + - @`.
+
+## Editar, eliminar y fusionar lugares
+
+Los viajes guardan `origin`/`destination` como **texto** y se enlazan al lugar por `norm(nombre)`, así que cualquier cambio de nombre se propaga a los viajes.
+
+- **Editar** (`openPlacePanel` → `savePlace`): nombre, colonia/zona e ícono (`KINDS`: home, work, gym, family, other). El nombre no puede quedar vacío ni repetirse (sin mayúsculas ni acentos; cambiar solo mayúsculas del propio lugar sí se permite). Si cambia el nombre, se reescribe `origin`/`destination` en todos los viajes que lo usan (también variantes por acentos o mayúsculas) **sin tocar `points`**, y se reasigna `ui.selPair`.
+- **Eliminar** (`deletePlace`): sin viajes, confirmación simple. Con viajes, `chooseDialog` muestra cuántos y ofrece «Conservar los viajes» (mantienen texto y ruta; el lugar sale de la lista y del mapa) o «Fusionar con otro lugar». **Nunca se borran viajes.** Si luego se registra un viaje con ese nombre, `canonicalPlace` recrea el lugar como siempre (sin ubicación).
+- **Fusionar** (`mergeDialog` → `mergePlace`): el destino se elige de una lista (el botón está desactivado hasta elegir) con el resumen «N viajes pasarán de «A» a «B»». Los viajes de A pasan al nombre de B, las rutas con `pointsSource: 'auto'` se regeneran con las coordenadas de B (si B no tiene ubicación, `tripPoints` daría `[]` y se conservan las rutas anteriores; las `'imported'` nunca se tocan) y A se elimina.
+- **Deshacer** (`showUndo`): el aviso lleva el botón «Deshacer» ~6 s (`toast` acepta `{ms, action}`; `Ctrl+Z` fuera de un campo de texto también). Solo se guardan los campos que cambian (texto y `points` de los viajes tocados, el lugar y su posición en la lista, `selPlace`/`selPair`) y se restauran por referencia; si entretanto se creó otro lugar con ese nombre, avisa en lugar de duplicar.
+- Tras eliminar o fusionar, `clearPlaceSel` limpia `selPlace`, `selPair` (si involucra el lugar) y el modo ubicación; todo pasa por `save()`, así que también se actualiza el archivo de datos.
+- El menú ⋮ (`.pmenu`) se inserta en el DOM al abrirlo (no vive en el estado): Esc o clic fuera lo cierran y el foco vuelve al botón; se voltea hacia arriba si no cabe.
 
 ## Persistencia en archivo (v2.1)
 
@@ -91,6 +103,6 @@ File System Access API (`showDirectoryPicker`, modo `readwrite`). Sin la API (`F
 
 ## Pruebas
 
-No hay suite automática. La persistencia en archivo se probó con Chrome real y un handle de OPFS en lugar del selector nativo (OPFS no existe en `file://`, así que la app se sirvió desde `localhost`; en `file://` se comprobó que la API existe y que la app arranca limpia): elegir carpeta, archivo nuevo y existente, debounce y agrupación, recarga con permiso en `prompt` y reconexión, borrar `localStorage` y recuperar desde el archivo, conflicto (archivo / app / decidir después), archivo borrado, carpeta eliminada, archivo inválido, escritura fallida y recuperación en la siguiente sesión, poda a 14 respaldos, menú contraído y navegador sin la API. El selector de carpetas nativo y su aviso de permiso de Chrome se deben probar a mano. El resto de la app se probó con Chrome real por `file://` (CDP con WebGL por software): abrir cada vista, alternar capas, seleccionar 20 viajes seguidos (1 contexto WebGL vivo, consola limpia), reproducción, modo ubicación, edición, respaldo ida y vuelta, importación v1, datos vacíos y sin conexión. Prueba manual recomendada con GPU real y conexión lenta.
+No hay suite automática. La persistencia en archivo se probó con Chrome real y un handle de OPFS en lugar del selector nativo (OPFS no existe en `file://`, así que la app se sirvió desde `localhost`; en `file://` se comprobó que la API existe y que la app arranca limpia): elegir carpeta, archivo nuevo y existente, debounce y agrupación, recarga con permiso en `prompt` y reconexión, borrar `localStorage` y recuperar desde el archivo, conflicto (archivo / app / decidir después), archivo borrado, carpeta eliminada, archivo inválido, escritura fallida y recuperación en la siguiente sesión, poda a 14 respaldos, menú contraído y navegador sin la API. El selector de carpetas nativo y su aviso de permiso de Chrome se deben probar a mano. Editar/eliminar/fusionar lugares se probó con Chrome real por `file://` (menú y teclado, validaciones, renombrar con `points` intactos y vuelta atrás idéntica, eliminar con y sin viajes, fusión con rutas regeneradas, Deshacer idéntico al estado previo, caducidad a 6 s, recreación del lugar y pines del mapa real). El resto de la app se probó con Chrome real por `file://` (CDP con WebGL por software): abrir cada vista, alternar capas, seleccionar 20 viajes seguidos (1 contexto WebGL vivo, consola limpia), reproducción, modo ubicación, edición, respaldo ida y vuelta, importación v1, datos vacíos y sin conexión. Prueba manual recomendada con GPU real y conexión lenta.
 
 El repositorio git vive en esta carpeta (`curso qlik/trayecto/`); los mensajes de commit no llevan trailer de coautoría.
