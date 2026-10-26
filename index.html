@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trayecto</title>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" aria-label="Menú principal">
+    <div class="brand">
+      <div class="logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M5 20 10 4"/><path d="M19 20 14 4"/><path d="M12 7v1.6M12 11.5v1.8M12 16.5v2"/></svg></div>
+      <span class="brand-name">Trayecto</span>
+    </div>
+    <div class="new-wrap">
+      <button class="btn-new" id="btnNew" aria-haspopup="menu" aria-expanded="false" aria-controls="newMenu" data-tip="Nuevo registro"></button>
+      <div class="menu" id="newMenu" role="menu" aria-label="Nuevo registro" hidden></div>
+    </div>
+    <nav class="nav" id="navMain" aria-label="Secciones"></nav>
+    <div class="nav nav-bottom" id="navBottom"></div>
+    <button type="button" class="fs-status" id="fsStatus" data-tone="none" hidden><span class="fs-dot" aria-hidden="true"></span><span class="nav-label fs-label"></span></button>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="pageTitle">Inicio</h1>
+        <p id="pageSub"></p>
+      </div>
+      <div class="top-actions">
+        <label class="search" for="q">
+          <span id="searchIco"></span>
+          <input id="q" type="search" placeholder="Buscar viajes…" autocomplete="off" aria-label="Buscar">
+          <kbd class="hint" title="Atajo: /">/</kbd>
+        </label>
+        <div class="date-chip" id="todayChip"></div>
+      </div>
+    </header>
+    <div class="fs-notice" id="fsNotice" role="status" hidden></div>
+    <main id="content" class="content" tabindex="-1"></main>
+  </div>
+</div>
+<div class="backdrop" id="backdrop"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" inert></aside>
+<div class="modal-wrap" id="modalWrap"></div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
