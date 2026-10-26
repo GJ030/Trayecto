@@ -1,8 +1,8 @@
 # Trayecto
 
-Aplicación de escritorio **100 % local** para registrar viajes en auto, cargas de gasolina y lugares. Es un único archivo, `trayecto.html` (HTML + CSS + JS sin dependencias de compilación), que se abre con doble clic (`file://`). Idioma de la interfaz: español (es-MX). Versión mostrada en Ajustes: **2.0**.
+Aplicación de escritorio **100 % local** para registrar viajes en auto, cargas de gasolina y lugares. Es un único archivo, `trayecto.html` (HTML + CSS + JS sin dependencias de compilación), que se abre con doble clic (`file://`). Idioma de la interfaz: español (es-MX). Versión mostrada en Ajustes: **2.1**.
 
-Los datos viven en `localStorage` del navegador y nunca salen del equipo. Lo único que usa internet son los mapas reales (MapLibre y el estilo/mosaicos de OpenFreeMap); sin conexión la app sigue funcionando con los mapas SVG esquemáticos.
+Los datos viven en `localStorage` (caché) y, opcionalmente, en un archivo `trayecto-datos.json` dentro de una carpeta que el usuario elige (Chrome/Edge); nunca salen del equipo. Lo único que usa internet son los mapas reales (MapLibre y el estilo/mosaicos de OpenFreeMap); sin conexión la app sigue funcionando con los mapas SVG esquemáticos.
 
 ## Funciones
 
@@ -10,7 +10,8 @@ Los datos viven en `localStorage` del navegador y nunca salen del equipo. Lo ún
 - **Viajes**: tabla ordenable y filtrable, detalle con mapa interactivo, **reproducción de la ruta**, tarjeta PNG, edición (tecla `E`) y borrado.
 - **Gasolina**: cargas con km/L calculado entre tanques llenos; alta, edición (lápiz) y borrado.
 - **Lugares**: mapa con tres capas (Lugares / Todas las rutas / Mapa de calor), tiempos de traslado por trayecto, **ubicar o mover lugares** en el mapa.
-- **Estadísticas**, **Vehículos**, **Ajustes** (preferencias, atajos, restablecer/borrar datos) y **Respaldo** (JSON y CSV).
+- **Estadísticas**, **Vehículos**, **Ajustes** (preferencias, atajos, restablecer/borrar datos) y **Respaldo** (JSON, CSV, **carpeta de datos** y respaldos automáticos).
+- **Indicador de guardado** al pie del menú lateral (también contraído) y aviso discreto bajo la barra superior cuando la carpeta necesita atención.
 - Atajos: `N` viaje nuevo, `G` carga nueva, `E` editar el viaje seleccionado, `/` buscar, `Esc` cerrar, `Ctrl+Enter` guardar en un panel, `↑ ↓` moverse entre viajes.
 
 ## Estructura del código
@@ -32,7 +33,8 @@ Todo el JavaScript está en un solo IIFE al final del archivo, dividido en secci
 | Panel lateral | `openDrawer`/`closeDrawer`/`requestCloseDrawer`, `guardChanges`, autocompletado, `openTripPanel(edit)`, `openFuelPanel(edit)`, `saveTrip`, `saveFuel`, `showTripSummary` |
 | PNG con canvas | `tripCanvas` (ruta real de `points` con degradado; sin points usa `routePts`) |
 | Diálogo y avisos | `confirmDialog`, `toast` |
-| Respaldo | `exportJSON`, `exportCSV`, `importJSON` |
+| Respaldo | `snapshot`/`backupPayload`, `exportJSON`, `exportCSV`, `parseBackup` (validación y saneado compartidos), `adoptData`, `importJSON` |
+| Archivo de datos | `FS` (estado), IndexedDB (`idbGet/Set/Del`), `validated`, `readFile`, `chooseDialog`, `fsInfo`/`paintFS`/`setState`, respaldos diarios, `touch`/`tick`/`flush`/`writeOnce`, `openLinked`, `linkFolder`, `pickFolder`, `reconnectFS`, `forgetFS`, `fsAction`, `initFS` |
 | Eventos de contenido | `deleteTrip`/`deleteFuel` y los manejadores delegados por `data-action` |
 | Atajos globales / Inicio | teclado y arranque; `window.__trayecto` expone estado y ganchos de prueba |
 
@@ -57,6 +59,20 @@ ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ...
 - **Migración v1 → v2** (`migrate`, también al importar): los lugares de ejemplo reciben lat/lng por nombre solo si conservan su posición original; se generan los `points` y `pointsSource` que falten. La clave `trayecto:v1` se borra únicamente cuando los datos migrados ya quedaron guardados en `trayecto:v2`.
 - **Respaldo JSON**: `{ app, version, exportedAt, data }`. Al importar se validan lat/lng (rango), se descartan puntos inválidos, se regeneran los que falten y se rechaza una versión mayor a 2. Los CSV (viajes, cargas) llevan BOM UTF-8 y neutralizan celdas que empiezan con `= + - @`.
 
+## Persistencia en archivo (v2.1)
+
+File System Access API (`showDirectoryPicker`, modo `readwrite`). Sin la API (`FS.supported` falso) la sección de Respaldo se reemplaza por la nota «Disponible en Chrome o Edge», se oculta el indicador y la app funciona como antes. `navigator.storage.persist()` se llama al iniciar.
+
+- **Archivo**: `trayecto-datos.json` con el formato del respaldo JSON v2 (`{app, version, exportedAt, data:{vehicles, places, trips, fuel, settings}}`, `lastBackup` en `null`, sin `ui`). El identificador de la carpeta vive en IndexedDB (`trayecto-fs` / `kv` / clave `dir`).
+- **`save()`** escribe en `localStorage` al instante y llama a `afterSave` (`touch`): la escritura al archivo es un *debounce* de 800 ms (`tick` → `flush`, una sola escritura a la vez, serializada con `FS.busy/again`). `pagehide`, `beforeunload` y `visibilitychange` (oculta) disparan lo pendiente. Si la comparación de contenido no cambia (solo cambió la pantalla) no se escribe.
+- **Validación**: `validated()` pasa los datos por `parseBackup` y falla si el filtro descartaría algún registro; nunca se escribe si falla (estado `error`, el detalle va en el tooltip). `parseBackup` es la misma validación de importar.
+- **Claves de comparación**: `canonKey(data)` (ignora `hints` y `lastBackup`, preferencias de cada equipo). `FS.syncKey` = clave del último contenido sincronizado; `FS.known` = `lastModified` conocido del archivo.
+- **Conflicto**: antes de escribir se compara `lastModified` con `FS.known`; si cambió y el contenido ya no es el sincronizado ni igual al de la app, `chooseDialog` pregunta qué versión conservar (archivo / app; Esc = decidir después → estado `conflict`, no se escribe nada hasta resolver con el aviso «Elegir versión»).
+- **`dirty`** (`localStorage` clave `trayecto:fs`, junto con `fileMod` y `modified`): se marca en cada `save()` con carpeta enlazada y se limpia solo tras escribir con éxito. En la siguiente sesión, si hay `dirty` y el archivo no cambió (`lastModified == fileMod`) se empujan los cambios pendientes; si cambió, se pregunta. Sin `dirty`, al abrir se carga el archivo.
+- **Estados** (`FS.state`): `none`, `ok`, `saving`, `error`, `off` (permiso por reconfirmar: aviso «Reconectar carpeta de datos»; `requestPermission` necesita clic), `missing` (carpeta inexistente), `nofile`, `invalid`, `conflict`. Los cuatro últimos son *hold* (`FS_HOLD`): no se escribe hasta que el usuario decide; la caché sigue intacta. Los manejadores `fs-*` llaman a `fsAction` sin `await` previo para conservar la activación del clic.
+- **Respaldos diarios**: antes de la primera escritura del día se crea `respaldos/trayecto-AAAA-MM-DD.json` (si ya existe el de hoy, no se hace nada) con el **contenido previo** del archivo (el estado antes de los cambios del día; si no hay, los datos nuevos) y se conservan los 14 más recientes (`FS_KEEP`). Solo se tocan nombres que cumplen `BK_RE`. Un fallo del respaldo no impide guardar.
+- `window.__trayecto.fs` expone `state`, `link(dirHandle)`, `flush`, `open` y `backups` para pruebas (permite enlazar un handle sin el selector nativo).
+
 ## Mapas
 
 - `project()` es una proyección lineal sobre `GEO_BOUNDS` (lat 19.29–19.53, lng −99.28 a −99.08) estirada al lienzo SVG de 800×520 y acotada a sus márgenes; es el respaldo, no un mapa fiel.
@@ -75,6 +91,6 @@ ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ...
 
 ## Pruebas
 
-No hay suite automática. Se probó con Chrome real por `file://` (CDP con WebGL por software): abrir cada vista, alternar capas, seleccionar 20 viajes seguidos (1 contexto WebGL vivo, consola limpia), reproducción, modo ubicación, edición, respaldo ida y vuelta, importación v1, datos vacíos y sin conexión. Prueba manual recomendada con GPU real y conexión lenta.
+No hay suite automática. La persistencia en archivo se probó con Chrome real y un handle de OPFS en lugar del selector nativo (OPFS no existe en `file://`, así que la app se sirvió desde `localhost`; en `file://` se comprobó que la API existe y que la app arranca limpia): elegir carpeta, archivo nuevo y existente, debounce y agrupación, recarga con permiso en `prompt` y reconexión, borrar `localStorage` y recuperar desde el archivo, conflicto (archivo / app / decidir después), archivo borrado, carpeta eliminada, archivo inválido, escritura fallida y recuperación en la siguiente sesión, poda a 14 respaldos, menú contraído y navegador sin la API. El selector de carpetas nativo y su aviso de permiso de Chrome se deben probar a mano. El resto de la app se probó con Chrome real por `file://` (CDP con WebGL por software): abrir cada vista, alternar capas, seleccionar 20 viajes seguidos (1 contexto WebGL vivo, consola limpia), reproducción, modo ubicación, edición, respaldo ida y vuelta, importación v1, datos vacíos y sin conexión. Prueba manual recomendada con GPU real y conexión lenta.
 
 El repositorio git vive en esta carpeta (`curso qlik/trayecto/`); los mensajes de commit no llevan trailer de coautoría.

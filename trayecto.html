@@ -446,6 +446,34 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
 .modal h2{font-size:18px;font-weight:650;margin-bottom:6px}
 .modal p{color:var(--text-2);font-size:14px}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+.modal.wide{width:480px}
+.choices{display:grid;gap:10px;margin-top:18px}
+.choice{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:12px 14px;border-radius:12px;border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text);text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+.choice:hover,.choice:focus-visible{border-color:rgba(255,176,32,.55);background:var(--surface-3)}
+.choice b{font-weight:650}
+.choice span{color:var(--text-2);font-size:13px}
+/* Archivo de datos: indicador del menú, aviso y tarjeta de Respaldo */
+.fs-status{--tone:var(--muted);display:flex;align-items:center;gap:12px;width:100%;height:30px;margin-top:8px;padding:0 13px;border:0;border-radius:8px;background:none;color:var(--muted);font-size:12px;text-align:left;cursor:pointer;overflow:hidden;transition:background .15s,color .15s}
+.fs-status[hidden]{display:none}
+.fs-status:hover{background:rgba(255,255,255,.04);color:var(--text-2)}
+.fs-status[data-tone=ok]{--tone:var(--green)}
+.fs-status[data-tone=busy]{--tone:var(--accent)}
+.fs-status[data-tone=warn]{--tone:var(--accent)}
+.fs-status[data-tone=err]{--tone:var(--red)}
+.fs-dot{flex:none;width:18px;display:grid;place-items:center}
+.fs-dot::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--tone)}
+.fs-status[data-tone=none] .fs-dot::before{background:transparent;box-shadow:inset 0 0 0 1.5px var(--tone)}
+.fs-status[data-tone=busy] .fs-dot::before{animation:fsBlink 1s ease-in-out infinite}
+.fs-label{overflow:hidden;text-overflow:ellipsis}
+@keyframes fsBlink{50%{opacity:.3}}
+.tip{max-width:340px;white-space:normal}
+.fs-notice{display:flex;align-items:center;gap:12px;margin:0 32px 12px;padding:9px 12px 9px 14px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:12px;color:var(--text-2);font-size:13px}
+.fs-notice[hidden]{display:none}
+.fs-notice svg{flex:none;color:var(--accent)}
+.fs-notice span{flex:1;min-width:0}
+.fs-notice .btn{flex:none}
+.fs-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.fs-note{display:flex;align-items:center;gap:8px}
 .toasts{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:90;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
 .toast{display:flex;align-items:center;gap:10px;padding:11px 16px;border-radius:12px;background:var(--surface-3);border:1px solid var(--border-strong);box-shadow:0 16px 40px rgba(0,0,0,.55);font-weight:550;animation:toastIn .3s var(--ease)}
 .toast svg{color:var(--green)}
@@ -463,7 +491,7 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
 @keyframes draw{to{stroke-dashoffset:0}}
 @keyframes pulse{0%{opacity:.55;transform:scale(1)}100%{opacity:0;transform:scale(2.8)}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}.route-path{stroke-dashoffset:0}}
-@media (max-width:1360px){.content{padding:6px 24px 40px}.topbar{padding:0 24px}.search{width:280px}.stat-val.xl{font-size:36px}.toolbar-count{display:none}#fVeh{width:170px!important}.date-range .input{width:136px}.split.has-detail{grid-template-columns:minmax(0,1fr) 330px}}
+@media (max-width:1360px){.fs-notice{margin:0 24px 12px}.content{padding:6px 24px 40px}.topbar{padding:0 24px}.search{width:280px}.stat-val.xl{font-size:36px}.toolbar-count{display:none}#fVeh{width:170px!important}.date-range .input{width:136px}.split.has-detail{grid-template-columns:minmax(0,1fr) 330px}}
 </style>
 </head>
 <body>
@@ -479,6 +507,7 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
     </div>
     <nav class="nav" id="navMain" aria-label="Secciones"></nav>
     <div class="nav nav-bottom" id="navBottom"></div>
+    <button type="button" class="fs-status" id="fsStatus" data-tone="none" hidden><span class="fs-dot" aria-hidden="true"></span><span class="nav-label fs-label"></span></button>
   </aside>
   <div class="main">
     <header class="topbar">
@@ -495,6 +524,7 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
         <div class="date-chip" id="todayChip"></div>
       </div>
     </header>
+    <div class="fs-notice" id="fsNotice" role="status" hidden></div>
     <main id="content" class="content" tabindex="-1"></main>
   </div>
 </div>
@@ -589,7 +619,8 @@ const ICONS={
   wallet:'<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18"/><circle cx="16.5" cy="15" r="1.2"/>',
   shield:'<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/>',
   drop:'<path d="M12 3.5s6 6.4 6 10.8a6 6 0 0 1-12 0C6 9.9 12 3.5 12 3.5z"/>',
-  keyboard:'<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7.5 14h9"/>'
+  keyboard:'<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7.5 14h9"/>',
+  folder:'<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2.2 2.5h7.3A2.5 2.5 0 0 1 21 10v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18z"/>'
 };
 const icon=(n,s=18)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]||''}</svg>`;
 const kindIcon=k=>({home:'home',work:'briefcase',gym:'dumbbell',family:'heart'}[k]||'pin');
@@ -793,7 +824,9 @@ Store.init();
 let S=Store.load();
 if(!S||!Array.isArray(S.trips))S=seed();else S=migrate(S);
 S=normalize(S);
-const save=()=>Store.save(S);
+/* El archivo de datos (sección "Archivo de datos") se engancha aquí: save() escribe en localStorage al instante y avisa para que se programe la escritura al archivo */
+let afterSave=null;
+const save=()=>{Store.save(S);if(afterSave)afterSave();};
 save();Store.retireLegacy(S);
 
 /* ================= Cálculos ================= */
@@ -1610,7 +1643,7 @@ function renderAjustes(){
         <div class="set-row"><div><b>Menú contraído</b><p>Muestra solo los íconos del menú lateral.</p></div><button class="switch-bare" role="switch" aria-checked="${!!S.ui.collapsed}" data-action="toggle-collapse" aria-label="Menú contraído"><span class="track"></span></button></div>
       </section>
       <section class="card"><h3 class="sec-title">Datos</h3>
-        <div class="set-row"><div><b>Almacenamiento</b><p>${Store.ok?'Todo se guarda automáticamente en este equipo, sin conexión.':'El almacenamiento local no está disponible; los datos viven solo en memoria hasta cerrar.'}</p></div><span class="badge ${Store.ok?'green':''}">${Store.ok?'Local':'Memoria'}</span></div>
+        <div class="set-row"><div><b>Almacenamiento</b><p>${FS.handle?`Se guarda automáticamente en la caché del navegador y en ${FS_FILE} (carpeta «${esc(FS.handle.name)}»). ${esc(fsInfo().label)}.`:Store.ok?`Se guarda automáticamente en la caché de este navegador, sin conexión.${FS.supported?' Elige una carpeta de datos en Respaldo para guardarlo también en un archivo.':''}`:'El almacenamiento local no está disponible; los datos viven solo en memoria hasta cerrar.'}</p></div><span class="badge ${FS.handle?(['ok','busy'].includes(fsInfo().tone)?'green':''):Store.ok?'green':''}">${FS.handle?'Archivo':Store.ok?'Navegador':'Memoria'}</span></div>
         <div class="set-row"><div><b>Restablecer datos de ejemplo</b><p>Reemplaza tus datos por los viajes y cargas de muestra.</p></div><button class="btn" data-action="reset-demo">${icon('refresh',16)} Restablecer</button></div>
         <div class="set-row"><div><b>Borrar todos los datos</b><p>Elimina viajes, cargas, lugares y vehículos de este equipo.</p></div><button class="btn btn-danger" data-action="wipe">${icon('trash',16)} Borrar todo</button></div>
       </section>
@@ -1619,7 +1652,7 @@ function renderAjustes(){
       <section class="card"><h3 class="sec-title">Atajos de teclado</h3>
         <div class="kbd-list"><div><span>Nuevo viaje</span><kbd>N</kbd></div><div><span>Nueva carga de gasolina</span><kbd>G</kbd></div><div><span>Editar el viaje seleccionado</span><kbd>E</kbd></div><div><span>Buscar</span><kbd>/</kbd></div><div><span>Cerrar panel o detalle</span><kbd>Esc</kbd></div><div><span>Guardar en un panel</span><span><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span></div><div><span>Moverse entre viajes</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div></div>
       </section>
-      <section class="card"><h3 class="sec-title">Acerca de Trayecto</h3><p class="muted-sm" style="margin-top:6px">Versión 2.0. Tus datos nunca salen de este equipo y la app funciona sin conexión: los mapas reales necesitan internet y, sin él, se usa un mapa esquemático. Todas las funciones son gratuitas, sin anuncios ni suscripciones.</p></section>
+      <section class="card"><h3 class="sec-title">Acerca de Trayecto</h3><p class="muted-sm" style="margin-top:6px">Versión 2.1. Tus datos nunca salen de este equipo y la app funciona sin conexión: los mapas reales necesitan internet y, sin él, se usa un mapa esquemático. Todas las funciones son gratuitas, sin anuncios ni suscripciones.</p></section>
     </div>
   </div>`;
 }
@@ -1627,8 +1660,9 @@ function renderAjustes(){
 function renderRespaldo(){
   const lb=S.settings.lastBackup;
   return `<div class="view grid">
-    <section class="card span-12 banner${Store.ok?'':' warn'}"><div class="b-ico">${icon(Store.ok?'shield':'alert',22)}</div><div><h3>${Store.ok?'Tus datos se guardan en este equipo':'Modo memoria'}</h3><p>${Store.ok?'Nada se envía a internet. Exporta un respaldo para moverlos a otra PC o tenerlos a salvo.':'Este navegador no permite guardar localmente. Exporta un respaldo antes de cerrar para no perder tus registros.'}${lb?` Último respaldo: ${esc(new Date(lb).toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}.`:' Aún no has exportado un respaldo.'}</p></div>
+    <section class="card span-12 banner${Store.ok?'':' warn'}"><div class="b-ico">${icon(Store.ok?'shield':'alert',22)}</div><div><h3>${Store.ok?'Tus datos se guardan en este equipo':'Modo memoria'}</h3><p>${Store.ok?(FS.handle?`Viven en la caché del navegador y en el archivo ${FS_FILE} de tu carpeta de datos. Nada se envía a internet.`:`Hoy viven solo en la caché de este navegador: si se limpia, se pierden. Nada se envía a internet.${FS.supported?' Elige una carpeta de datos o exporta un respaldo para tenerlos a salvo.':' Exporta un respaldo para moverlos a otra PC o tenerlos a salvo.'}`):'Este navegador no permite guardar localmente. Exporta un respaldo antes de cerrar para no perder tus registros.'}${lb?` Último respaldo: ${esc(new Date(lb).toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}.`:' Aún no has exportado un respaldo.'}</p></div>
       <div class="chips"><span class="tag muted">${S.trips.length} viajes</span><span class="tag muted">${S.fuel.length} cargas</span><span class="tag muted">${S.places.length} lugares</span><span class="tag muted">${S.vehicles.length} vehículos</span></div></section>
+    ${fsCardHTML()}
     <section class="card span-4 backup-card"><div class="b-ico">${icon('download',20)}</div><h3>Exportar respaldo</h3><p>Descarga un archivo JSON con viajes, cargas, lugares, vehículos y ajustes.</p><button class="btn btn-primary" data-action="export-json">${icon('download',16)} Exportar JSON</button></section>
     <section class="card span-4 backup-card"><div class="b-ico">${icon('upload',20)}</div><h3>Importar respaldo</h3><p>Restaura desde un archivo JSON de Trayecto. Reemplaza los datos actuales después de confirmar.</p><button class="btn" data-action="import-json">${icon('file',16)} Elegir archivo…</button><input type="file" id="importFile" accept=".json,application/json" hidden></section>
     <section class="card span-4 backup-card"><div class="b-ico">${icon('table',20)}</div><h3>Exportar a CSV</h3><p>Para abrir en Excel u otra hoja de cálculo.</p><div class="btn-col"><button class="btn" data-action="csv-trips" ${S.trips.length?'':'disabled'}>${icon('route',16)} Viajes (${S.trips.length})</button><button class="btn" data-action="csv-fuel" ${S.fuel.length?'':'disabled'}>${icon('fuel',16)} Cargas (${S.fuel.length})</button></div></section>
@@ -1674,6 +1708,7 @@ function applyChrome(){
   document.body.classList.toggle('no-hints',!S.settings.hints);
   const cb=$('#btnCollapse');
   if(cb){const l=S.ui.collapsed?'Expandir menú':'Contraer menú';cb.querySelector('.nav-label').textContent=l;cb.dataset.tip=l;cb.setAttribute('aria-label',l);cb.setAttribute('aria-expanded',String(!S.ui.collapsed));}
+  paintStatusBtn();
 }
 function buildChrome(){
   const nb=([v,l,ic])=>`<div class="nav-wrap"><button class="nav-item" data-view="${v}" data-tip="${l}">${icon(ic)}<span class="nav-label">${l}</span></button></div>`;
@@ -2095,8 +2130,11 @@ function toast(msg,kind='ok'){
 /* ================= Respaldo ================= */
 const csvCell=v=>{let s=v==null?'':String(v);if(typeof v==='string'&&/^[=+\-@\t\r]/.test(s))s="'"+s; /* evita que Excel interprete texto como fórmula */return /[",\n;]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
 const toCSV=rows=>'\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
+/* Datos tal como se guardan en un respaldo (también en el archivo de datos): sin ui y con lastBackup en null */
+const snapshot=()=>({vehicles:S.vehicles,places:S.places,trips:S.trips,fuel:S.fuel,settings:{...S.settings,lastBackup:null}});
+const backupPayload=()=>({app:'Trayecto',version:DATA_VERSION,exportedAt:new Date().toISOString(),data:snapshot()});
 function exportJSON(){
-  const payload={app:'Trayecto',version:DATA_VERSION,exportedAt:new Date().toISOString(),data:{vehicles:S.vehicles,places:S.places,trips:S.trips,fuel:S.fuel,settings:{...S.settings,lastBackup:null}}};
+  const payload=backupPayload();
   download(`trayecto-respaldo-${isoDate(new Date())}.json`,JSON.stringify(payload,null,2),'application/json');
   S.settings.lastBackup=new Date().toISOString();save();render();toast('Respaldo exportado');
 }
@@ -2111,12 +2149,13 @@ function exportCSV(kind){
     download(`trayecto-cargas-${isoDate(new Date())}.csv`,toCSV(rows),'text/csv;charset=utf-8');toast('Cargas exportadas a CSV');
   }
 }
-async function importJSON(text){
-  let o;try{o=JSON.parse(text);}catch(_){toast('El archivo no es un JSON válido','err');return;}
+/* Validación y saneado de un respaldo ya analizado (importar, leer el archivo de datos y validar antes de escribirlo).
+   Devuelve {error} o {data:{vehicles,places,trips,fuel,settings}, raw:{conteos originales}}: lo que no pasa el filtro se descarta y se nota en raw */
+function parseBackup(o){
   const d=o&&(o.data||o);
-  if(!d||!Array.isArray(d.trips)||!Array.isArray(d.fuel)||!Array.isArray(d.vehicles)){toast('El archivo no parece un respaldo de Trayecto','err');return;}
+  if(!d||!Array.isArray(d.trips)||!Array.isArray(d.fuel)||!Array.isArray(d.vehicles))return {error:'El archivo no parece un respaldo de Trayecto'};
   const ver=+((o&&o.version)||d.version)||1;
-  if(ver>DATA_VERSION){toast('El respaldo es de una versión más nueva de Trayecto','err');return;}
+  if(ver>DATA_VERSION)return {error:'El respaldo es de una versión más nueva de Trayecto'};
   const okDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(String(s||'').slice(0,10));
   const okTime=s=>/^\d{1,2}:\d{2}$/.test(String(s||''));
   const vehicles=d.vehicles.filter(v=>v&&v.name).map((v,i)=>({id:String(v.id||uid('v')),name:String(v.name),year:v.year?+v.year:'',plate:String(v.plate||''),fuel:String(v.fuel||'Magna'),tank:+v.tank||'',color:String(v.color||PALETTE[i%PALETTE.length])}));
@@ -2126,13 +2165,339 @@ async function importJSON(text){
     return Object.assign(c,resolvePoints(c,t.points,t.pointsSource,places));
   });
   const fuel=d.fuel.filter(f=>f&&okDate(f.date)&&isFinite(f.odometer)&&isFinite(f.liters)&&isFinite(f.price)).map(f=>({id:String(f.id||uid('f')),date:String(f.date).slice(0,10),station:String(f.station||'Sin nombre'),odometer:+f.odometer,liters:+f.liters,price:+f.price,full:f.full!==false,vehicleId:String(f.vehicleId||'')}));
-  const ok=await confirmDialog({title:'¿Reemplazar tus datos?',body:`Se importarán ${trips.length} viajes, ${fuel.length} cargas, ${places.length} lugares y ${vehicles.length} vehículos. Tus datos actuales se reemplazarán.`,ok:'Importar',danger:false});
-  if(!ok)return;
+  return {data:{vehicles,places,trips,fuel,settings:Object.assign({},d.settings||{})},raw:{trips:d.trips.length,fuel:d.fuel.length,vehicles:d.vehicles.length,places:Array.isArray(d.places)?d.places.length:0}};
+}
+/* Reemplaza los datos de la app por unos ya saneados (conserva las preferencias de pantalla; lastBackup solo si se pide) */
+function adoptData(data,keepLastBackup){
   const ui={...S.ui,selTrip:null,selPlace:null,selPair:null,tf:{tag:'Todos',vehicle:'all',from:'',to:''}};
-  S=normalize({vehicles,places,trips,fuel,settings:Object.assign({},d.settings||{},{hints:S.settings.hints}),ui});
+  const settings=Object.assign({},data.settings,{hints:S.settings.hints});
+  if(keepLastBackup)settings.lastBackup=S.settings.lastBackup;
+  S=normalize({vehicles:data.vehicles,places:data.places,trips:data.trips,fuel:data.fuel,settings,ui});
   if(!vehById(S.settings.defaultVehicle))S.settings.defaultVehicle=S.vehicles[0]?.id||null;
+}
+async function importJSON(text){
+  let o;try{o=JSON.parse(text);}catch(_){toast('El archivo no es un JSON válido','err');return;}
+  const r=parseBackup(o);
+  if(r.error){toast(r.error,'err');return;}
+  const {vehicles,places,trips,fuel}=r.data;
+  const ok=await confirmDialog({title:'¿Reemplazar tus datos?',body:`Se importarán ${trips.length} viajes, ${fuel.length} cargas, ${places.length} lugares y ${vehicles.length} vehículos. Tus datos actuales se reemplazarán.${FS.handle?' El archivo de la carpeta de datos también se actualizará.':''}`,ok:'Importar',danger:false});
+  if(!ok)return;
+  adoptData(r.data);
   save();applyChrome();render();toast('Respaldo importado');
 }
+
+/* ================= Archivo de datos ================= */
+/* Persistencia en un archivo real con la File System Access API (Chrome/Edge). localStorage sigue siendo la caché: save() escribe ahí al instante
+   y el archivo (trayecto-datos.json, mismo formato que el respaldo JSON v2) se escribe ~800 ms después, agrupando cambios.
+   Nunca se escribe sin pasar parseBackup, ni se sobrescribe un archivo que cambió por fuera sin preguntar.
+   `dirty` (en localStorage) marca cambios aún no escritos: si la pestaña se cierra antes de tiempo, la próxima sesión los empuja al archivo en lugar de descartarlos. */
+const FS_FILE='trayecto-datos.json',FS_DIR='respaldos',FS_KEEP=14,FS_DELAY=800,KEY_FS='trayecto:fs';
+const FS_HOLD=['missing','nofile','invalid','conflict']; /* estados que bloquean la escritura hasta que el usuario decida */
+const FS={supported:typeof window.showDirectoryPicker==='function',handle:null,perm:'none',state:'none',detail:'',hold:null,
+  known:null,syncKey:null,rawKey:null,savedAt:null,rev:0,busy:false,again:false,timer:null,backups:{count:0,last:null},
+  meta:(()=>{try{return Object.assign({dirty:false,fileMod:null,modified:null},JSON.parse(localStorage.getItem(KEY_FS)||'{}'));}catch(e){return {dirty:false,fileMod:null,modified:null};}})()};
+const saveMeta=()=>{try{localStorage.setItem(KEY_FS,JSON.stringify(FS.meta));}catch(e){}};
+const canWrite=()=>!!FS.handle&&FS.perm==='granted'&&!FS.hold;
+const hasData=d=>d.trips.length+d.fuel.length+d.places.length+d.vehicles.length>0;
+const fmtWhen=ms=>new Date(ms).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const fmtHM=d=>d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+/* hints y lastBackup son preferencias de este equipo: no cuentan al decidir si dos versiones difieren */
+const canonKey=d=>JSON.stringify({...d,settings:{...d.settings,hints:undefined,lastBackup:undefined}});
+
+/* ---- IndexedDB: guarda el identificador de la carpeta entre sesiones ---- */
+function idbOp(mode,fn){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('trayecto-fs',1);
+    r.onupgradeneeded=()=>r.result.createObjectStore('kv');
+    r.onerror=()=>rej(r.error);
+    r.onsuccess=()=>{const db=r.result,tx=db.transaction('kv',mode);let rq;
+      try{rq=fn(tx.objectStore('kv'));}catch(e){db.close();rej(e);return;}
+      tx.oncomplete=()=>{db.close();res(rq.result);};tx.onerror=tx.onabort=()=>{db.close();rej(tx.error);};};
+  });
+}
+const idbGet=k=>idbOp('readonly',s=>s.get(k)),idbSet=(k,v)=>idbOp('readwrite',s=>s.put(v,k)),idbDel=k=>idbOp('readwrite',s=>s.delete(k));
+
+/* ---- Validación y lectura ---- */
+/* Datos actuales pasados por parseBackup; falla si el filtro descartaría algo (el archivo no sería un respaldo fiel) */
+function validated(){
+  const payload=backupPayload(),r=parseBackup(payload);
+  if(r.error)return {error:r.error};
+  const lost=[['viaje','viajes','trips'],['carga','cargas','fuel'],['lugar','lugares','places'],['vehículo','vehículos','vehicles']].map(([o,m,k])=>{const c=S[k].length-r.data[k].length;return c>0?`${c} ${c===1?o:m}`:null;}).filter(Boolean);
+  if(lost.length)return {error:'No pasan la validación del respaldo: '+lost.join(', ')+'.'};
+  return {payload,data:r.data,key:canonKey(r.data)};
+}
+async function readFile(fh){
+  const f=await fh.getFile(),text=await f.text(),o={mod:f.lastModified,empty:text.trim()==='',data:null,key:null,error:null};
+  if(o.empty)return o;
+  try{const r=parseBackup(JSON.parse(text));if(r.error)o.error=r.error;else{o.data=r.data;o.key=canonKey(r.data);}}catch(e){o.error='El archivo no es un JSON válido';}
+  return o;
+}
+/* Fecha de la última modificación de los datos de la app (se compara el contenido, no los clics de pantalla) */
+function trackModified(){
+  const raw=JSON.stringify(snapshot());
+  if(FS.rawKey===null){FS.rawKey=raw;return;}
+  if(raw!==FS.rawKey){FS.rawKey=raw;FS.meta.modified=new Date().toISOString();saveMeta();}
+}
+
+/* ---- Diálogo de elección entre versiones ---- */
+function chooseDialog({title,body,options,cancel='Decidir después'}){
+  return new Promise(res=>{
+    const prev=document.activeElement;
+    modalWrap.innerHTML=`<div class="modal wide" role="alertdialog" aria-modal="true" aria-labelledby="mTitle" aria-describedby="mBody"><div class="m-ico neutral">${icon('alert',22)}</div><h2 id="mTitle">${esc(title)}</h2><p id="mBody">${esc(body)}</p><div class="choices">${options.map((o,i)=>`<button type="button" class="choice" data-m="${i}"><b>${esc(o.title)}</b><span>${o.lines.map(esc).join('<br>')}</span></button>`).join('')}</div><div class="modal-actions"><button type="button" class="btn" data-m="x">${esc(cancel)}</button></div></div>`;
+    modalWrap.classList.add('open');modalOpen=true;
+    const btns=$$('[data-m]',modalWrap);btns[btns.length-1].focus(); /* lo seguro por omisión: decidir después */
+    const done=v=>{modalWrap.classList.remove('open');modalWrap.innerHTML='';modalOpen=false;document.removeEventListener('keydown',onKey,true);if(prev&&document.contains(prev))prev.focus({preventScroll:true});res(v);};
+    const onKey=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null);}else if(e.key==='Tab'){e.preventDefault();const i=btns.indexOf(document.activeElement);btns[(i+(e.shiftKey?-1:1)+btns.length)%btns.length].focus();}};
+    document.addEventListener('keydown',onKey,true);
+    modalWrap.onclick=e=>{const b=e.target.closest('[data-m]');if(b)done(b.dataset.m==='x'?null:options[+b.dataset.m].value);else if(e.target===modalWrap)done(null);};
+  });
+}
+const sideLines=(d,when)=>[`${d.trips.length} viajes · ${d.fuel.length} cargas · ${d.places.length} lugares`,'Última modificación: '+when];
+const appWhen=()=>FS.meta.modified?fmtWhen(Date.parse(FS.meta.modified)):'sin fecha registrada';
+function resolveConflict(cur,v){
+  trackModified();
+  const opts=[{value:'app',title:'Conservar la de la app',lines:sideLines(v.data,appWhen())}];
+  if(cur.data)opts.unshift({value:'file',title:'Conservar la del archivo',lines:sideLines(cur.data,fmtWhen(cur.mod))});
+  return chooseDialog({title:'El archivo de datos cambió por fuera',body:`${FS_FILE} ya no coincide con lo último que guardó la app (otra pestaña o una edición manual). Elige qué versión conservar; la otra se reemplazará.${cur.data?'':' El archivo actual está vacío o no es válido.'}`,options:opts});
+}
+
+/* ---- Estado visible: indicador del menú, aviso y tarjeta de Respaldo ---- */
+function fsInfo(){
+  const n=FS.handle?FS.handle.name:'',when=FS.savedAt?` · última sincronización a las ${fmtHM(FS.savedAt)}`:'';
+  switch(FS.state){
+    case 'ok':return {label:'Guardado en archivo',tone:'ok',tip:`${FS_FILE} en «${n}»${when}`};
+    case 'saving':return {label:'Guardando…',tone:'busy',tip:`Escribiendo ${FS_FILE} en «${n}»`};
+    case 'error':return {label:'Error al guardar',tone:'err',tip:FS.detail||'No se pudo escribir el archivo. Tus datos siguen a salvo en la caché del navegador.'};
+    case 'off':return {label:'Carpeta desconectada',tone:'warn',tip:`El navegador necesita tu permiso para usar «${n}». Haz clic para reconectar; mientras tanto se usa la caché del navegador.`};
+    case 'missing':return {label:'Carpeta no disponible',tone:'warn',tip:`La carpeta «${n}» ya no existe o no se puede abrir. Tus datos siguen en la caché del navegador.`};
+    case 'nofile':return {label:'Archivo no encontrado',tone:'warn',tip:`No hay ${FS_FILE} en «${n}». Tus datos siguen en la caché del navegador.`};
+    case 'invalid':return {label:'Archivo no válido',tone:'err',tip:`${FS_FILE} no se pudo leer: ${FS.detail}`};
+    case 'conflict':return {label:'Elegir versión',tone:'warn',tip:`${FS_FILE} cambió por fuera; falta decidir qué versión conservar. No se escribe nada mientras tanto.`};
+    default:return {label:'Sin carpeta de datos',tone:'none',tip:'Los datos solo viven en la caché de este navegador. Elige una carpeta en Respaldo para guardarlos también en un archivo.'};
+  }
+}
+const FS_NOTICES={
+  off:()=>({msg:`Reconectar carpeta de datos: el navegador necesita tu permiso para volver a usar «${FS.handle.name}». Mientras tanto se usa la caché.`,btns:[['fs-reconnect','Reconectar',1]]}),
+  missing:()=>({msg:`La carpeta de datos «${FS.handle.name}» ya no existe o no se puede abrir. Tus datos siguen en la caché del navegador.`,btns:[['fs-pick','Elegir otra carpeta',1],['fs-resolve','Reintentar']]}),
+  nofile:()=>({msg:`No se encontró ${FS_FILE} en «${FS.handle.name}». Tus datos siguen en la caché del navegador.`,btns:[['fs-pick','Elegir otra carpeta',1],['fs-create','Crear el archivo aquí']]}),
+  invalid:()=>({msg:`${FS_FILE} no es válido (${FS.detail}). No se tocará hasta que decidas.`,btns:[['fs-pick','Elegir otra carpeta',1],['fs-replace','Reemplazar con mis datos']]}),
+  conflict:()=>({msg:`${FS_FILE} cambió por fuera y falta decidir qué versión conservar. Mientras tanto no se escribe nada.`,btns:[['fs-resolve','Elegir versión',1]]})
+};
+let fsSig='';
+function paintStatusBtn(){
+  const info=fsInfo(),el=$('#fsStatus');
+  el.hidden=!FS.supported;el.dataset.tone=info.tone;$('.fs-label',el).textContent=info.label;
+  el.dataset.tip=`${info.label} — ${info.tip}`; /* menú contraído: lo muestra el tooltip propio */
+  if(S.ui.collapsed)el.removeAttribute('title');else el.title=info.tip;
+}
+function paintFS(){
+  paintStatusBtn();
+  const nt=$('#fsNotice');
+  if(nt){
+    const spec=FS.handle&&FS_NOTICES[FS.state]?FS_NOTICES[FS.state]():null;
+    nt.hidden=!spec;
+    nt.innerHTML=spec?`${icon('alert',16)}<span>${esc(spec.msg)}</span>${spec.btns.map(([a,l,p])=>`<button type="button" class="btn sm${p?' btn-primary':''}" data-action="${a}">${esc(l)}</button>`).join('')}`:'';
+  }
+  const sig=[FS.state,FS.detail,FS.handle?FS.handle.name:'',FS.backups.count,FS.backups.last,FS.savedAt?+FS.savedAt:''].join('|');
+  if(sig!==fsSig){fsSig=sig;if(S.ui.view==='respaldo'||S.ui.view==='ajustes')render();}
+}
+function setState(state,detail){
+  const was=FS.state;FS.state=state;FS.detail=detail||'';FS.hold=FS_HOLD.includes(state)?state:null;
+  if(state==='error'&&was!=='error')toast(FS.detail||'Error al guardar el archivo','err');
+  paintFS();
+}
+/* Tarjeta de la vista Respaldo */
+function fsCardHTML(){
+  if(!FS.supported)return `<p class="muted-sm fs-note span-12">${icon('folder',16)}<span>Carpeta de datos: Disponible en Chrome o Edge</span></p>`;
+  const info=fsInfo();
+  if(!FS.handle)return `<section class="card span-12 banner warn" id="fsCard"><div class="b-ico">${icon('folder',22)}</div><div><h3>Carpeta de datos</h3><p>Guarda tus datos también en un archivo real (${FS_FILE}) dentro de una carpeta de tu laptop, además de la caché del navegador. Se hace una copia diaria en la subcarpeta ${FS_DIR}/.</p></div>
+    <div class="fs-actions"><button class="btn btn-primary" id="fsPick" data-action="fs-pick">${icon('folder',16)} Elegir carpeta</button></div></section>`;
+  const bk=FS.backups.count?`Último respaldo automático: ${fmtDate(FS.backups.last,{day:'numeric',month:'short',year:'numeric'})} · ${FS.backups.count} ${FS.backups.count===1?'copia':'copias'} en ${FS_DIR}/ (se conservan las ${FS_KEEP} más recientes)`:`Aún no hay respaldos automáticos: se crea uno al primer guardado de cada día en ${FS_DIR}/.`;
+  return `<section class="card span-12 banner${info.tone==='ok'||info.tone==='busy'?'':' warn'}" id="fsCard"><div class="b-ico">${icon('folder',22)}</div><div><h3>Carpeta de datos · «${esc(FS.handle.name)}» <span class="badge${info.tone==='ok'?' green':''}">${esc(info.label)}</span></h3><p>${esc(info.tip)}</p><p>${esc(bk)}</p></div>
+    <div class="fs-actions">${FS.state==='off'?`<button class="btn btn-primary" id="fsReconnect" data-action="fs-reconnect">${icon('refresh',16)} Reconectar</button>`:''}<button class="btn" id="fsPick" data-action="fs-pick">${icon('folder',16)} Cambiar carpeta</button><button class="btn btn-ghost" id="fsForget" data-action="fs-forget">Dejar de usar</button></div></section>`;
+}
+
+/* ---- Respaldos diarios ---- */
+const BK_RE=/^trayecto-\d{4}-\d{2}-\d{2}\.json$/;
+async function listBackups(bd){const names=[];for await(const [n,h] of bd.entries())if(h.kind==='file'&&BK_RE.test(n))names.push(n);return names.sort();}
+async function refreshBackups(){
+  try{
+    let names=[];
+    try{names=await listBackups(await FS.handle.getDirectoryHandle(FS_DIR));}catch(e){if(e.name!=='NotFoundError')throw e;}
+    FS.backups={count:names.length,last:names.length?names[names.length-1].slice(9,19):null};
+  }catch(e){FS.backups={count:0,last:null};}
+}
+/* Una vez al día, antes del primer guardado: copia lo que había en el archivo (el estado previo a los cambios del día; si no hay, los datos nuevos).
+   Un fallo aquí no impide guardar los datos */
+async function dailyBackup(fh,text){
+  try{
+    const name=`trayecto-${isoDate(new Date())}.json`,bd=await FS.handle.getDirectoryHandle(FS_DIR,{create:true});
+    try{await bd.getFileHandle(name);return;}catch(e){if(e.name!=='NotFoundError')throw e;}
+    let body=text;
+    if(fh){try{const t=await(await fh.getFile()).text(),r=parseBackup(JSON.parse(t));if(r.data&&hasData(r.data))body=t;}catch(_){}}
+    const w=await(await bd.getFileHandle(name,{create:true})).createWritable();
+    try{await w.write(body);await w.close();}catch(e){try{await w.abort();}catch(_){}throw e;}
+    const names=await listBackups(bd);
+    while(names.length>FS_KEEP)await bd.removeEntry(names.shift());
+    FS.backups={count:names.length,last:names[names.length-1].slice(9,19)};
+  }catch(e){}
+}
+
+/* ---- Escritura ---- */
+function touch(){
+  if(!FS.supported)return;
+  FS.rev++;
+  if(FS.handle&&!FS.meta.dirty){FS.meta.dirty=true;saveMeta();}
+  clearTimeout(FS.timer);FS.timer=setTimeout(tick,FS_DELAY);
+}
+async function tick(){
+  clearTimeout(FS.timer);FS.timer=null;
+  trackModified();
+  await flush();
+}
+async function flush(){
+  if(!canWrite())return;
+  if(FS.busy){FS.again=true;return;}
+  FS.busy=true;
+  try{do{FS.again=false;await writeOnce();}while(FS.again&&canWrite());}
+  catch(e){failWrite(e);}
+  finally{FS.busy=false;}
+}
+function failWrite(e){
+  const n=e&&e.name;
+  if(n==='NotAllowedError'||n==='SecurityError'){FS.perm='prompt';setState('off');}
+  else if(n==='NotFoundError')setState('missing');
+  else setState('error',n==='QuotaExceededError'?'No hay espacio suficiente en el disco para guardar el archivo.':`No se pudo escribir ${FS_FILE}: ${(e&&e.message)||n||'error desconocido'}`);
+}
+function markClean(rev){if(FS.rev===rev&&FS.meta.dirty){FS.meta.dirty=false;saveMeta();}}
+function adoptSync(cur,rev){FS.known=cur.mod;FS.syncKey=cur.key;FS.meta.fileMod=cur.mod;FS.savedAt=new Date();markClean(rev);saveMeta();setState('ok');}
+async function writeOnce(){
+  trackModified();
+  const rev=FS.rev,v=validated();
+  if(v.error){setState('error',v.error);return;}
+  if(v.key===FS.syncKey){markClean(rev);if(FS.state==='saving')setState('ok');return;} /* nada nuevo que escribir (p. ej. solo cambió la pantalla) */
+  setState('saving');
+  let fh=null,f=null;
+  try{fh=await FS.handle.getFileHandle(FS_FILE);f=await fh.getFile();}catch(e){if(e.name!=='NotFoundError')throw e;fh=null;}
+  if(f&&f.lastModified!==FS.known){ /* cambió por fuera (otra pestaña o edición manual) */
+    const cur=await readFile(fh);
+    if(cur.key&&cur.key===v.key){adoptSync(cur,rev);return;}
+    if(!(cur.empty||(cur.key&&cur.key===FS.syncKey))){
+      const c=await resolveConflict(cur,v);
+      if(c==='file'){applyFile(cur);return;}
+      if(c!=='app'){setState('conflict');return;}
+    }
+  }
+  const text=JSON.stringify(v.payload,null,2);
+  await dailyBackup(fh,text);
+  const target=fh||await FS.handle.getFileHandle(FS_FILE,{create:true});
+  const w=await target.createWritable();
+  try{await w.write(text);await w.close();}catch(e){try{await w.abort();}catch(_){}throw e;}
+  const nf=await target.getFile();
+  FS.known=nf.lastModified;FS.syncKey=v.key;FS.savedAt=new Date();FS.meta.fileMod=FS.known;markClean(rev);saveMeta();
+  setState('ok');
+}
+/* Carga en la app los datos del archivo (la caché se actualiza sin pasar por save(), que reprogramaría una escritura) */
+function applyFile(cur){
+  adoptData(cur.data,true);Store.save(S);
+  FS.known=cur.mod;FS.syncKey=cur.key;FS.savedAt=new Date();FS.meta.fileMod=cur.mod;FS.meta.dirty=false;FS.meta.modified=new Date(cur.mod).toISOString();saveMeta();
+  FS.rawKey=JSON.stringify(snapshot());
+  applyChrome();render();setState('ok');
+}
+
+/* ---- Conexión ---- */
+/* Al abrir la app (o reconectar): decide si el archivo se carga, se actualiza o hay que preguntar */
+async function openLinked(){
+  try{
+    FS.perm='granted';FS.hold=null; /* se vuelve a evaluar todo: cada rama deja el estado que le toca */
+    try{for await(const _ of FS.handle.values())break;}catch(e){if(e.name==='NotFoundError'){setState('missing');return;}throw e;}
+    let fh;try{fh=await FS.handle.getFileHandle(FS_FILE);}catch(e){if(e.name==='NotFoundError'){FS.known=null;await refreshBackups();setState('nofile');return;}throw e;}
+    const cur=await readFile(fh),v=validated();
+    await refreshBackups();
+    if(cur.error){FS.known=cur.mod;setState('invalid',cur.error);return;}
+    if(v.error){FS.known=cur.mod;setState('error',v.error);return;}
+    if(cur.empty){FS.known=cur.mod;FS.syncKey=null;FS.meta.dirty=true;saveMeta();await flush();return;}
+    if(cur.key===v.key){adoptSync(cur,FS.rev);return;}
+    if(!FS.meta.dirty){applyFile(cur);toast(`Datos cargados desde ${FS_FILE}`);return;}
+    if(cur.mod===FS.meta.fileMod){FS.known=cur.mod;FS.syncKey=cur.key;await flush();return;} /* el archivo sigue como lo dejamos: los cambios pendientes son más nuevos */
+    const c=await resolveConflict(cur,v);
+    if(c==='file'){applyFile(cur);}
+    else if(c==='app'){FS.known=cur.mod;FS.syncKey=cur.key;await flush();}
+    else{FS.known=FS.meta.fileMod;setState('conflict');}
+  }catch(e){failWrite(e);}
+}
+/* Enlaza una carpeta ya elegida: compara con el archivo que tenga y pregunta cuál conservar */
+async function linkFolder(dir){
+  trackModified();
+  const v=validated();
+  if(v.error){toast('Tus datos no pasan la validación del respaldo: '+v.error,'err');return false;}
+  let cur=null;
+  try{cur=await readFile(await dir.getFileHandle(FS_FILE));}
+  catch(e){if(e.name!=='NotFoundError'){toast('No se pudo leer la carpeta: '+(e.message||e.name),'err');return false;}}
+  let useFile=false;
+  if(cur&&cur.error){
+    if(!await confirmDialog({title:'El archivo de datos no es válido',body:`${FS_FILE} en «${dir.name}» no se pudo leer (${cur.error}). ¿Reemplazarlo con los datos de la app?`,ok:'Reemplazar'}))return false;
+  }else if(cur&&cur.data&&hasData(cur.data)&&cur.key!==v.key){
+    const c=await chooseDialog({title:'Ya hay datos en esa carpeta',body:`${FS_FILE} ya existe y tiene datos distintos a los de la app. ¿Cuáles quieres conservar? Los otros se reemplazarán.`,cancel:'Cancelar',
+      options:[{value:'file',title:'Conservar los del archivo',lines:sideLines(cur.data,fmtWhen(cur.mod))},{value:'app',title:'Conservar los actuales de la app',lines:sideLines(v.data,appWhen())}]});
+    if(!c)return false;useFile=c==='file';
+  }
+  FS.handle=dir;FS.perm='granted';FS.hold=null;
+  try{await idbSet('dir',dir);}catch(e){toast('No se pudo recordar la carpeta para la próxima vez','err');}
+  FS.known=cur?cur.mod:null;FS.syncKey=(cur&&cur.key)||null;FS.meta.fileMod=FS.known;
+  if(useFile)applyFile(cur);
+  else{FS.meta.dirty=true;saveMeta();setState('ok');await flush();}
+  await refreshBackups();paintFS();
+  toast(`Carpeta de datos: ${dir.name}`);
+  return true;
+}
+async function pickFolder(){
+  let dir;
+  try{dir=await window.showDirectoryPicker({id:'trayecto-datos',mode:'readwrite',startIn:'documents'});}
+  catch(e){if(e&&e.name!=='AbortError')toast('No se pudo abrir el selector de carpetas','err');return;}
+  await linkFolder(dir);
+}
+async function reconnectFS(){
+  if(!FS.handle)return;
+  let p;try{p=await FS.handle.requestPermission({mode:'readwrite'});}catch(e){p='denied';}
+  FS.perm=p;
+  if(p!=='granted'){setState('off');toast('No se concedió el permiso a la carpeta','err');return;}
+  await openLinked();
+}
+async function forgetFS(){
+  try{await idbDel('dir');}catch(e){}
+  clearTimeout(FS.timer);FS.timer=null;
+  Object.assign(FS,{handle:null,perm:'none',known:null,syncKey:null,savedAt:null,backups:{count:0,last:null}});
+  FS.meta.dirty=false;FS.meta.fileMod=null;saveMeta();
+  setState('none');toast('Carpeta de datos desconectada; tus datos siguen en el navegador');
+}
+async function fsAction(a){
+  if(a==='fs-pick')await pickFolder();
+  else if(a==='fs-reconnect')await reconnectFS();
+  else if(a==='fs-forget')await forgetFS();
+  else if(a==='fs-resolve')await openLinked();
+  else if(a==='fs-create'){FS.hold=null;FS.known=null;FS.syncKey=null;FS.meta.dirty=true;saveMeta();await flush();}
+  else if(a==='fs-replace'){
+    if(await confirmDialog({title:`¿Reemplazar ${FS_FILE}?`,body:'El archivo actual no se puede leer. Se escribirán en su lugar los datos de la app.',ok:'Reemplazar'})){FS.hold=null;FS.syncKey=null;FS.meta.dirty=true;saveMeta();await flush();}
+  }
+}
+async function initFS(){
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});}catch(e){} /* reduce el riesgo de que el navegador borre la caché por falta de espacio */
+  if(!FS.supported){paintFS();return;}
+  FS.rawKey=JSON.stringify(snapshot());
+  try{FS.handle=(await idbGet('dir'))||null;}catch(e){FS.handle=null;}
+  if(!FS.handle){setState('none');return;}
+  let p='prompt';try{p=await FS.handle.queryPermission({mode:'readwrite'});}catch(e){}
+  FS.perm=p;
+  if(p==='granted')await openLinked();else setState('off');
+}
+afterSave=touch;
+const flushPending=()=>{if(FS.timer)tick();};
+window.addEventListener('pagehide',flushPending);
+window.addEventListener('beforeunload',flushPending);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushPending();});
+$('#fsNotice').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(b)fsAction(b.dataset.action);});
+$('#fsStatus').addEventListener('click',()=>{if(FS.state==='off')reconnectFS();else go('respaldo');});
 
 /* ================= Eventos de contenido ================= */
 /* Eliminar con confirmación; devuelven true si se eliminó (los usa también el pie del panel en modo edición) */
@@ -2186,8 +2551,9 @@ contentEl.addEventListener('click',async e=>{
     case 'set-tag':S.settings.defaultTag=el.dataset.tag;save();render();break;
     case 'toggle-hints':S.settings.hints=!S.settings.hints;save();applyChrome();render();break;
     case 'toggle-collapse':S.ui.collapsed=!S.ui.collapsed;save();applyChrome();render();break;
-    case 'reset-demo':if(await confirmDialog({title:'¿Restablecer datos de ejemplo?',body:'Tus viajes, cargas, lugares y vehículos actuales se reemplazarán por los datos de muestra.',ok:'Restablecer'})){const ui={...S.ui,selTrip:null,selPlace:null,selPair:null};S=normalize(Object.assign(seed(),{ui}));save();applyChrome();render();toast('Datos de ejemplo restablecidos');}break;
-    case 'wipe':if(await confirmDialog({title:'¿Borrar todos los datos?',body:`Se eliminarán ${S.trips.length} viajes, ${S.fuel.length} cargas, ${S.places.length} lugares y ${S.vehicles.length} vehículos de este equipo. Te recomendamos exportar un respaldo antes.`,ok:'Borrar todo'})){const ui={...S.ui,selTrip:null,selPlace:null,selPair:null,tf:{tag:'Todos',vehicle:'all',from:'',to:''}};S=normalize({settings:{hints:S.settings.hints},ui});save();render();toast('Se borraron todos los datos');}break;
+    case 'reset-demo':if(await confirmDialog({title:'¿Restablecer datos de ejemplo?',body:'Tus viajes, cargas, lugares y vehículos actuales se reemplazarán por los datos de muestra.'+(FS.handle?` También se actualizará ${FS_FILE}; la copia diaria de ${FS_DIR}/ conserva el estado anterior.`:''),ok:'Restablecer'})){const ui={...S.ui,selTrip:null,selPlace:null,selPair:null};S=normalize(Object.assign(seed(),{ui}));save();applyChrome();render();toast('Datos de ejemplo restablecidos');}break;
+    case 'wipe':if(await confirmDialog({title:'¿Borrar todos los datos?',body:`Se eliminarán ${S.trips.length} viajes, ${S.fuel.length} cargas, ${S.places.length} lugares y ${S.vehicles.length} vehículos de este equipo. Te recomendamos exportar un respaldo antes.${FS.handle?` También se vaciará ${FS_FILE}; la copia diaria de ${FS_DIR}/ conserva el estado anterior.`:''}`,ok:'Borrar todo'})){const ui={...S.ui,selTrip:null,selPlace:null,selPair:null,tf:{tag:'Todos',vehicle:'all',from:'',to:''}};S=normalize({settings:{hints:S.settings.hints},ui});save();render();toast('Se borraron todos los datos');}break;
+    case 'fs-pick':case 'fs-reconnect':case 'fs-forget':case 'fs-resolve':case 'fs-create':case 'fs-replace':fsAction(a);break; /* sin await antes: el selector de carpetas y requestPermission exigen el clic del usuario */
     case 'export-json':exportJSON();break;
     case 'import-json':$('#importFile')?.click();break;
     case 'csv-trips':exportCSV('trips');break;
@@ -2255,8 +2621,8 @@ document.addEventListener('keydown',e=>{
 });
 
 /* ================= Inicio ================= */
-buildChrome();applyChrome();render(true);
-window.__trayecto={get state(){return S;},get maps(){return MapReg.map(m=>({slot:m.slot,trip:m.tripId,state:m.state}));},get play(){return Play;},get mapObjs(){return MapReg.map(m=>m.map);},get loc(){return Loc;},render,go,openTripPanel,openFuelPanel};
+buildChrome();applyChrome();render(true);paintFS();initFS();
+window.__trayecto={fs:{state:FS,link:linkFolder,flush:tick,open:openLinked,backups:refreshBackups},get state(){return S;},get maps(){return MapReg.map(m=>({slot:m.slot,trip:m.tripId,state:m.state}));},get play(){return Play;},get mapObjs(){return MapReg.map(m=>m.map);},get loc(){return Loc;},render,go,openTripPanel,openFuelPanel};
 })();
 </script>
 </body>
