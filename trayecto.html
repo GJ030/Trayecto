@@ -227,8 +227,9 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
 .meta{margin:0 0 16px;display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px}
 .meta dt{color:var(--muted)}
 .meta dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
-.detail-actions{display:flex;gap:8px}
+.detail-actions{display:flex;flex-wrap:wrap;gap:8px}
 .detail-actions .btn{flex:1}
+.detail-actions .btn-primary{flex-basis:100%}
 
 /* ---------- Maps & charts ---------- */
 .map{border-radius:12px;overflow:hidden;border:1px solid var(--border);background:#0F0F12}
@@ -498,6 +499,7 @@ const ICONS={
   panel:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path d="m15.5 10-2 2 2 2"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  edit:'<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="m14 7 3 3"/>',
   trash:'<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7"/>',
   download:'<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
   upload:'<path d="M12 20V9"/><path d="m7 14 5-5 5 5"/><path d="M5 4h14"/>',
@@ -634,8 +636,15 @@ function cleanPoints(arr){
   return arr.filter(p=>p&&validGeo(p.lat,p.lng)&&typeof p.t==='string'&&isFinite(Date.parse(p.t))&&typeof p.speed==='number'&&isFinite(p.speed)&&p.speed>=0)
     .map(p=>({lat:p.lat,lng:p.lng,t:p.t,speed:p.speed})).sort((p,q)=>Date.parse(p.t)-Date.parse(q.t));
 }
-/* Conserva los puntos guardados si son utilizables; si faltan, los genera (o [] si el viaje no tiene coordenadas) */
-function pointsFor(t,raw,places){const c=cleanPoints(raw);return c&&c.length>=2?c:tripPoints(t,places);}
+/* Conserva los puntos guardados si son utilizables; si faltan, los genera (o [] si el viaje no tiene coordenadas).
+   pointsSource: 'auto' = generados por la app (se regeneran al editar el viaje), 'imported' = ruta ajena (no se sobrescribe).
+   Si el origen no se conoce, se compara con lo que generaría la app: idénticos → 'auto', distintos → 'imported' */
+function resolvePoints(t,raw,src,places){
+  const c=cleanPoints(raw);
+  if(!c||c.length<2)return {points:tripPoints(t,places),pointsSource:'auto'};
+  if(src!=='auto'&&src!=='imported')src=JSON.stringify(c)===JSON.stringify(tripPoints(t,places))?'auto':'imported';
+  return {points:c,pointsSource:src};
+}
 /* Lugar saneado. Los lugares con lat/lng no guardan x/y (se proyectan); sin coordenadas conservan su posición estimada */
 function cleanPlace(p,legacy){
   const name=String(p.name),sg=SEED_GEO[norm(name)];
@@ -678,7 +687,7 @@ function seed(){
     [1,'11:20',74,'Casa','Casa de mis papás',30.8,'v1','Personal',49790]
   ];
   const trips=TR.map(([a,dep,dur,o,de,km,v,tag,odo],i)=>({id:'t'+(i+1),date:d(a),depart:dep,arrive:fromMin(toMin(dep)+dur),origin:o,destination:de,odoStart:odo,odoEnd:+(odo+km).toFixed(1),vehicleId:v,tag}));
-  trips.forEach(t=>{t.points=tripPoints(t,places);});
+  trips.forEach(t=>{t.points=tripPoints(t,places);t.pointsSource='auto';});
   const FU=[
     [100,'Pemex Av. Universidad',47640,33.0,23.69,true,'v1'],
     [82,'Shell Insurgentes Sur',48080,34.2,23.89,true,'v1'],
@@ -692,17 +701,20 @@ function seed(){
   const fuel=FU.map(([a,st,odo,l,p,full,v],i)=>({id:'f'+(i+1),date:d(a),station:st,odometer:odo,liters:l,price:p,full,vehicleId:v}));
   return {version:DATA_VERSION,vehicles,places,trips,fuel,settings:{defaultVehicle:'v1',defaultTag:'Trabajo',hints:true,lastBackup:null},ui:{}};
 }
-/* v1 → v2: asigna lat/lng a los lugares de ejemplo (por nombre) y genera los points que faltan; no borra nada */
+/* v1 → v2: asigna lat/lng a los lugares de ejemplo (por nombre) y genera los points que faltan; no borra nada.
+   También completa pointsSource en los viajes v2 que aún no lo tienen */
 function migrate(d){
-  if(!d||(+d.version||1)>=DATA_VERSION)return d;
-  const places=(Array.isArray(d.places)?d.places:[]).filter(p=>p&&p.name).map(p=>cleanPlace(p,true));
-  const trips=(Array.isArray(d.trips)?d.trips:[]).map(t=>({...t,points:pointsFor(t,t.points,places)}));
+  if(!d)return d;
+  const old=(+d.version||1)<DATA_VERSION,ok=s=>s==='auto'||s==='imported';
+  if(!old&&!(Array.isArray(d.trips)&&d.trips.some(t=>t&&!ok(t.pointsSource))))return d;
+  const places=old?(Array.isArray(d.places)?d.places:[]).filter(p=>p&&p.name).map(p=>cleanPlace(p,true)):d.places;
+  const trips=(Array.isArray(d.trips)?d.trips:[]).map(t=>old||!ok(t.pointsSource)?{...t,...resolvePoints(t,t.points,t.pointsSource,places)}:t);
   return {...d,version:DATA_VERSION,places,trips};
 }
 function normalize(d){
   const o=Object.assign({version:DATA_VERSION,vehicles:[],places:[],trips:[],fuel:[],settings:{},ui:{}},d||{});
   o.places.forEach(p=>{if(p.lat===undefined)p.lat=null;if(p.lng===undefined)p.lng=null;});
-  o.trips.forEach(t=>{if(!Array.isArray(t.points))t.points=[];});
+  o.trips.forEach(t=>{if(!Array.isArray(t.points))t.points=[];if(t.pointsSource!=='auto'&&t.pointsSource!=='imported')t.pointsSource=t.points.length?'imported':'auto';});
   o.settings=Object.assign({defaultVehicle:o.vehicles[0]?.id||null,defaultTag:'Trabajo',hints:true,lastBackup:null},o.settings||{});
   o.ui=Object.assign({view:'inicio',collapsed:false,q:'',sort:{key:'date',dir:'desc'},selTrip:null,ff:'all',statTab:'km',dashVeh:null,selPlace:null,selPair:null},o.ui||{});
   o.ui.tf=Object.assign({tag:'Todos',vehicle:'all',from:'',to:''},o.ui.tf||{});
@@ -1014,7 +1026,7 @@ function renderViajes(){
         <dt>Etiqueta</dt><dd>${tagHTML(sel.tag)}</dd>
         <dt>Base del costo</dt><dd>${NF1.format(kmplOf(sel.vehicleId))} km/L · ${MXN.format(priceOf(sel.vehicleId))}/L</dd>
       </dl>
-      <div class="detail-actions"><button class="btn btn-primary" data-action="download-trip" data-id="${sel.id}">${icon('download',16)} Tarjeta PNG</button><button class="btn btn-danger" data-action="delete-trip" data-id="${sel.id}">${icon('trash',16)} Eliminar</button></div>
+      <div class="detail-actions"><button class="btn btn-primary" data-action="download-trip" data-id="${sel.id}">${icon('download',16)} Tarjeta PNG</button><button class="btn" data-action="edit-trip" data-id="${sel.id}">${icon('edit',16)} Editar <kbd class="hint">E</kbd></button><button class="btn btn-danger" data-action="delete-trip" data-id="${sel.id}">${icon('trash',16)} Eliminar</button></div>
     </aside>`;
   }
   return `<div class="view">
@@ -1054,7 +1066,7 @@ function renderGasolina(){
       <td class="r num"><b>${MXN.format(fuelTotal(f))}</b></td>
       <td class="r num">${NF0.format(f.odometer)} km</td>
       <td class="r num">${k?`<b style="color:${avgK&&k>=avgK?'var(--green)':'var(--text)'}">${NF1.format(k)}</b> km/L`:f.full?`<span class="tag muted" title="Primera carga de tanque lleno: sirve como referencia">Referencia</span>`:`<span class="tag muted" title="Se suma al siguiente tanque lleno">Parcial</span>`}</td>
-      <td class="r"><button class="icon-btn danger" data-action="delete-fuel" data-id="${f.id}" aria-label="Eliminar carga del ${esc(fmtDate(f.date,{day:'numeric',month:'long'}))}">${icon('trash',16)}</button></td></tr>`;}).join('');
+      <td class="r"><button class="icon-btn" data-action="edit-fuel" data-id="${f.id}" aria-label="Editar carga del ${esc(fmtDate(f.date,{day:'numeric',month:'long'}))}">${icon('edit',16)}</button><button class="icon-btn danger" data-action="delete-fuel" data-id="${f.id}" aria-label="Eliminar carga del ${esc(fmtDate(f.date,{day:'numeric',month:'long'}))}">${icon('trash',16)}</button></td></tr>`;}).join('');
   return `<div class="view">
     <div class="toolbar">
       <div class="seg" role="group" aria-label="Filtrar por vehículo"><button aria-pressed="${ff==='all'}" data-action="fuel-veh" data-id="all">Todos</button>${S.vehicles.map(v=>`<button aria-pressed="${ff===v.id}" data-action="fuel-veh" data-id="${v.id}"><span class="dot" style="background:${esc(v.color)}"></span>${esc(v.name)}</button>`).join('')}</div>
@@ -1175,7 +1187,7 @@ function renderAjustes(){
       <section class="card"><h3 class="sec-title">Preferencias</h3>
         <div class="set-row"><div><b>Vehículo predeterminado</b><p>Se preselecciona al registrar viajes y cargas.</p></div><select class="input" id="setVeh" data-change="set-veh" aria-label="Vehículo predeterminado">${S.vehicles.length?S.vehicles.map(v=>`<option value="${v.id}" ${S.settings.defaultVehicle===v.id?'selected':''}>${esc(v.name)}</option>`).join(''):'<option>Sin vehículos</option>'}</select></div>
         <div class="set-row"><div><b>Etiqueta predeterminada</b><p>La etiqueta con la que empieza cada viaje nuevo.</p></div><div class="seg" role="group" aria-label="Etiqueta predeterminada">${['Trabajo','Personal'].map(t=>`<button aria-pressed="${S.settings.defaultTag===t}" data-action="set-tag" data-tag="${t}">${t}</button>`).join('')}</div></div>
-        <div class="set-row"><div><b>Mostrar pistas de atajos</b><p>Muestra las teclas N, G, / y Esc junto a los botones.</p></div><button class="switch-bare" role="switch" aria-checked="${!!S.settings.hints}" data-action="toggle-hints" aria-label="Mostrar pistas de atajos"><span class="track"></span></button></div>
+        <div class="set-row"><div><b>Mostrar pistas de atajos</b><p>Muestra las teclas N, G, E, / y Esc junto a los botones.</p></div><button class="switch-bare" role="switch" aria-checked="${!!S.settings.hints}" data-action="toggle-hints" aria-label="Mostrar pistas de atajos"><span class="track"></span></button></div>
         <div class="set-row"><div><b>Menú contraído</b><p>Muestra solo los íconos del menú lateral.</p></div><button class="switch-bare" role="switch" aria-checked="${!!S.ui.collapsed}" data-action="toggle-collapse" aria-label="Menú contraído"><span class="track"></span></button></div>
       </section>
       <section class="card"><h3 class="sec-title">Datos</h3>
@@ -1186,7 +1198,7 @@ function renderAjustes(){
     </div>
     <div class="stack">
       <section class="card"><h3 class="sec-title">Atajos de teclado</h3>
-        <div class="kbd-list"><div><span>Nuevo viaje</span><kbd>N</kbd></div><div><span>Nueva carga de gasolina</span><kbd>G</kbd></div><div><span>Buscar</span><kbd>/</kbd></div><div><span>Cerrar panel o detalle</span><kbd>Esc</kbd></div><div><span>Guardar en un panel</span><span><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span></div><div><span>Moverse entre viajes</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div></div>
+        <div class="kbd-list"><div><span>Nuevo viaje</span><kbd>N</kbd></div><div><span>Nueva carga de gasolina</span><kbd>G</kbd></div><div><span>Editar el viaje seleccionado</span><kbd>E</kbd></div><div><span>Buscar</span><kbd>/</kbd></div><div><span>Cerrar panel o detalle</span><kbd>Esc</kbd></div><div><span>Guardar en un panel</span><span><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span></div><div><span>Moverse entre viajes</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div></div>
       </section>
       <section class="card"><h3 class="sec-title">Acerca de Trayecto</h3><p class="muted-sm" style="margin-top:6px">Versión 1.0. Funciona 100% sin conexión y tus datos nunca salen de este equipo. Todas las funciones son gratuitas, sin anuncios ni suscripciones.</p></section>
     </div>
@@ -1285,20 +1297,27 @@ qEl.addEventListener('input',()=>{S.ui.q=qEl.value;if(!SEARCHABLE.includes(S.ui.
 function focusSearch(){if(drawerOpen)return;if(!SEARCHABLE.includes(S.ui.view))go('viajes');qEl.focus();qEl.select();}
 
 /* ================= Panel lateral ================= */
-const drawer=$('#drawer'),backdrop=$('#backdrop');let drawerOpen=false,drawerOpener=null;
+const drawer=$('#drawer'),backdrop=$('#backdrop');let drawerOpen=false,drawerOpener=null,drawerGuard=null;
 function drawerHead(title,ic,eyebrow='Nuevo registro',ok){return `<div class="drawer-head"><div class="dh-ico${ok?' ok':''}">${icon(ic,20)}</div><div><div class="eyebrow">${esc(eyebrow)}</div><h2 id="drawerTitle">${esc(title)}</h2></div><div class="close-wrap"><kbd class="hint">Esc</kbd><button type="button" class="icon-btn" data-dz="close" aria-label="Cerrar panel">${icon('x')}</button></div></div>`;}
 function openDrawer(html,focusSel){
   if(!drawerOpen)drawerOpener=document.activeElement;
+  drawerGuard=null;
   drawer.innerHTML=html;drawer.inert=false;drawer.classList.add('open');backdrop.classList.add('open');drawerOpen=true;hideTip();
   requestAnimationFrame(()=>{const f=(focusSel&&drawer.querySelector(focusSel))||drawer.querySelector('input,select,button');f?.focus({preventScroll:true});});
 }
 function closeDrawer(){
   if(!drawerOpen)return;
-  drawer.classList.remove('open');backdrop.classList.remove('open');drawer.inert=true;drawerOpen=false;
+  drawer.classList.remove('open');backdrop.classList.remove('open');drawer.inert=true;drawerOpen=false;drawerGuard=null;
   const o=drawerOpener;drawerOpener=null;
   if(o&&document.contains(o)&&o!==document.body)o.focus({preventScroll:true});
 }
-backdrop.addEventListener('click',closeDrawer);
+/* Cierre iniciado por el usuario (Esc, clic fuera, Cancelar, ✕): en modo edición pide confirmar si hay cambios sin guardar */
+async function requestCloseDrawer(){
+  if(!drawerOpen)return;
+  if(drawerGuard&&drawerGuard()&&!await confirmDialog({title:'¿Descartar los cambios?',body:'Tienes cambios sin guardar en este panel. Si lo cierras, se perderán.',ok:'Descartar',danger:false}))return;
+  closeDrawer();
+}
+backdrop.addEventListener('click',requestCloseDrawer);
 drawer.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){const f=drawer.querySelector('form');if(f){e.preventDefault();f.requestSubmit();}}
   if(e.key==='Tab'){
@@ -1308,9 +1327,10 @@ drawer.addEventListener('keydown',e=>{
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
   }
 });
-drawer.addEventListener('click',e=>{
+drawer.addEventListener('click',async e=>{
   const el=e.target.closest('[data-dz]');if(!el)return;const a=el.dataset.dz;
-  if(a==='close')closeDrawer();
+  if(a==='close')requestCloseDrawer();
+  else if(a==='delete'){if(await(el.dataset.kind==='trip'?deleteTrip:deleteFuel)(el.dataset.id))closeDrawer();}
   else if(a==='go-veh'){closeDrawer();go('vehiculos');}
   else if(a==='swap'){const o=$('#tOrigin'),d=$('#tDest');[o.value,d.value]=[d.value,o.value];o.dispatchEvent(new Event('change',{bubbles:true}));}
   else if(a==='dl-summary'){const t=S.trips.find(x=>x.id===el.dataset.id);if(t)downloadTripPNG(t);}
@@ -1349,27 +1369,35 @@ const vehOptions=sel=>S.vehicles.map(v=>`<option value="${v.id}" ${v.id===sel?'s
 const noVehicleDrawer=title=>openDrawer(drawerHead(title,'car')+`<div class="drawer-body">${emptyState('car','Primero agrega un vehículo','Necesitas al menos un vehículo para registrar viajes y cargas de gasolina.',`<button class="btn btn-primary" data-dz="go-veh">${icon('car',16)} Ir a Vehículos</button>`)}</div>`);
 const defVeh=()=>vehById(S.settings.defaultVehicle)?S.settings.defaultVehicle:S.vehicles[0].id;
 
-/* ---- Nuevo viaje ---- */
-function openTripPanel(){
+/* Pie común de los paneles; en modo edición, "Eliminar" a la izquierda en lugar de la pista de Ctrl+Enter */
+const drawerFoot=(formId,saveLabel,del)=>`<div class="drawer-foot">${del?`<button type="button" class="btn btn-danger" data-dz="delete" data-kind="${del.kind}" data-id="${del.id}" style="margin-right:auto">${icon('trash',16)} Eliminar</button>`:`<span class="foot-hint hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> guarda</span>`}<button type="button" class="btn btn-ghost" data-dz="close">Cancelar</button><button type="submit" form="${formId}" class="btn btn-primary">${icon('check',16)} ${saveLabel}</button></div>`;
+/* Marca el panel como editable: pide confirmar el cierre si algún campo cambió respecto a lo que se abrió */
+function guardChanges(f){
+  const snap=()=>JSON.stringify([...f.elements].map(el=>el.type==='radio'||el.type==='checkbox'?el.checked:el.value))+(f.querySelector('#fFull')?.getAttribute('aria-checked')||'');
+  const init=snap();drawerGuard=()=>snap()!==init;
+}
+
+/* ---- Nuevo viaje / Editar viaje ---- */
+function openTripPanel(edit){
   closeMenu();derive();
-  if(!S.vehicles.length)return noVehicleDrawer('Nuevo viaje');
-  const dv=defVeh(),now=new Date(),dep=`${pad(now.getHours())}:${pad(Math.floor(now.getMinutes()/5)*5)}`;
-  const combo=(id,label,ph)=>`<div class="field"><label for="${id}">${label}</label><div class="combo"><input class="input" id="${id}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-lb" placeholder="${ph}" autocomplete="off"><ul class="combo-list" id="${id}-lb" role="listbox" aria-label="Lugares guardados" hidden></ul></div><div class="err" data-err="${id}"></div></div>`;
-  openDrawer(drawerHead('Nuevo viaje','route')+`
+  if(!S.vehicles.length)return noVehicleDrawer(edit?'Editar viaje':'Nuevo viaje');
+  const dv=edit&&vehById(edit.vehicleId)?edit.vehicleId:defVeh(),now=new Date(),dep=`${pad(now.getHours())}:${pad(Math.floor(now.getMinutes()/5)*5)}`;
+  const combo=(id,label,ph,val)=>`<div class="field"><label for="${id}">${label}</label><div class="combo"><input class="input" id="${id}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-lb" placeholder="${ph}" value="${esc(val||'')}" autocomplete="off"><ul class="combo-list" id="${id}-lb" role="listbox" aria-label="Lugares guardados" hidden></ul></div><div class="err" data-err="${id}"></div></div>`;
+  openDrawer(drawerHead(edit?'Editar viaje':'Nuevo viaje','route',edit?'Editar registro':undefined)+`
   <form id="tripForm" class="drawer-body" novalidate autocomplete="off">
-    <div class="route-box">${combo('tOrigin','Origen','¿De dónde saliste?')}<button type="button" class="icon-btn swap-btn" data-dz="swap" aria-label="Intercambiar origen y destino" title="Intercambiar">${icon('swapH',16)}</button>${combo('tDest','Destino','¿A dónde llegaste?')}</div>
+    <div class="route-box">${combo('tOrigin','Origen','¿De dónde saliste?',edit?.origin)}<button type="button" class="icon-btn swap-btn" data-dz="swap" aria-label="Intercambiar origen y destino" title="Intercambiar">${icon('swapH',16)}</button>${combo('tDest','Destino','¿A dónde llegaste?',edit?.destination)}</div>
     <div class="row row-3">
-      <div class="field"><label for="tDate">Fecha</label><input class="input" type="date" id="tDate" value="${isoDate(now)}"><div class="err" data-err="tDate"></div></div>
-      <div class="field"><label for="tDep">Salida</label><input class="input" type="time" id="tDep" value="${dep}"></div>
-      <div class="field"><label for="tArr">Llegada</label><input class="input" type="time" id="tArr"><div class="err" data-err="tArr"></div></div>
+      <div class="field"><label for="tDate">Fecha</label><input class="input" type="date" id="tDate" value="${edit?edit.date:isoDate(now)}"><div class="err" data-err="tDate"></div></div>
+      <div class="field"><label for="tDep">Salida</label><input class="input" type="time" id="tDep" value="${edit?fromMin(toMin(edit.depart)):dep}"></div>
+      <div class="field"><label for="tArr">Llegada</label><input class="input" type="time" id="tArr" value="${edit?fromMin(toMin(edit.arrive)):''}"><div class="err" data-err="tArr"></div></div>
     </div>
     <div class="row row-2">
-      <div class="field"><label for="tOdoS">Odómetro inicial</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tOdoS" value="${D.vs[dv]?.odo||''}" inputmode="decimal"><span>km</span></div><div class="err" data-err="tOdoS"></div></div>
-      <div class="field"><label for="tOdoE">Odómetro final</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tOdoE" inputmode="decimal"><span>km</span></div><div class="err" data-err="tOdoE"></div></div>
+      <div class="field"><label for="tOdoS">Odómetro inicial</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tOdoS" value="${edit?edit.odoStart:D.vs[dv]?.odo||''}" inputmode="decimal"><span>km</span></div><div class="err" data-err="tOdoS"></div></div>
+      <div class="field"><label for="tOdoE">Odómetro final</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tOdoE" value="${edit?edit.odoEnd:''}" inputmode="decimal"><span>km</span></div><div class="err" data-err="tOdoE"></div></div>
     </div>
     <div class="row row-2">
       <div class="field"><label for="tVeh">Vehículo</label><select class="input" id="tVeh">${vehOptions(dv)}</select></div>
-      <div class="field"><span class="lbl" id="tTagL">Etiqueta</span><div class="seg" role="radiogroup" aria-labelledby="tTagL">${['Trabajo','Personal'].map(t=>`<label><input type="radio" name="tTag" value="${t}" ${S.settings.defaultTag===t?'checked':''}><span>${t}</span></label>`).join('')}</div></div>
+      <div class="field"><span class="lbl" id="tTagL">Etiqueta</span><div class="seg" role="radiogroup" aria-labelledby="tTagL">${['Trabajo','Personal'].map(t=>`<label><input type="radio" name="tTag" value="${t}" ${(edit?edit.tag:S.settings.defaultTag)===t?'checked':''}><span>${t}</span></label>`).join('')}</div></div>
     </div>
     <div class="calc" aria-live="polite">
       <div><small>Distancia</small><b id="cKm" class="empty-v">—</b></div>
@@ -1378,8 +1406,8 @@ function openTripPanel(){
     </div>
     <div class="calc-foot"><span>Costo estimado de combustible <span class="muted-xs" id="cBasis"></span></span><b id="cCost">—</b></div>
   </form>
-  <div class="drawer-foot"><span class="foot-hint hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> guarda</span><button type="button" class="btn btn-ghost" data-dz="close">Cancelar</button><button type="submit" form="tripForm" class="btn btn-primary">${icon('check',16)} Guardar viaje</button></div>`,'#tOrigin');
-  const f=$('#tripForm'),g=id=>f.querySelector('#'+id);let odoDirty=false;
+  ${drawerFoot('tripForm',edit?'Guardar cambios':'Guardar viaje',edit&&{kind:'trip',id:edit.id})}`,edit?'#tDate':'#tOrigin');
+  const f=$('#tripForm'),g=id=>f.querySelector('#'+id);let odoDirty=!!edit;
   setupCombo(g('tOrigin'),placeOpts,v=>`“${v}” se guardará como lugar nuevo`);
   setupCombo(g('tDest'),placeOpts,v=>`“${v}” se guardará como lugar nuevo`);
   const setV=(id,html)=>{const el=g(id);el.innerHTML=html??'—';el.classList.toggle('empty-v',html==null);};
@@ -1398,8 +1426,9 @@ function openTripPanel(){
   f.addEventListener('input',upd);f.addEventListener('change',upd);
   g('tOdoS').addEventListener('input',()=>{odoDirty=true;});
   g('tVeh').addEventListener('change',()=>{if(!odoDirty)g('tOdoS').value=D.vs[g('tVeh').value]?.odo||'';upd();});
-  f.addEventListener('submit',e=>{e.preventDefault();saveTrip(f);});
+  f.addEventListener('submit',e=>{e.preventDefault();saveTrip(f,edit);});
   upd();
+  if(edit)guardChanges(f);
 }
 /* Ubica un lugar nuevo: cerca del lugar de referencia según los km del viaje (~18 px/km) y lejos de los demás pines */
 function newPlacePos(name,anchor,km){
@@ -1423,7 +1452,7 @@ function canonicalPlace(name,anchor,km){
   S.places.push({id:uid('p'),name:n,area:'',lat:null,lng:null,x:pos.x,y:pos.y,kind:'other'});
   return n;
 }
-function saveTrip(f){
+function saveTrip(f,edit){
   const g=id=>f.querySelector('#'+id);let errs=[];
   const o=g('tOrigin').value.trim(),d=g('tDest').value.trim(),date=g('tDate').value,dep=g('tDep').value,arr=g('tArr').value;
   const s=parseFloat(g('tOdoS').value),e=parseFloat(g('tOdoE').value);
@@ -1437,7 +1466,17 @@ function saveTrip(f){
   if(errs.length){g(errs[0]).focus();return;}
   const oKnown=S.places.some(p=>norm(p.name)===norm(o)),origin=canonicalPlace(o,oKnown?null:d,e-s),destination=canonicalPlace(d,origin,e-s);
   const t={id:uid('t'),date,depart:dep,arrive:arr,origin,destination,odoStart:s,odoEnd:e,vehicleId:g('tVeh').value,tag:f.querySelector('input[name=tTag]:checked')?.value||'Trabajo'};
-  t.points=tripPoints(t,S.places);
+  if(edit){
+    /* actualiza en su lugar (mismo id); la ruta se regenera solo si la generó la app y cambió algo de lo que la define */
+    const cur=S.trips.find(x=>x.id===edit.id);if(!cur){closeDrawer();return;}
+    const sig=x=>[x.date,fromMin(toMin(x.depart)),fromMin(toMin(x.arrive)),x.origin,x.destination,+x.odoStart,+x.odoEnd].join('|');
+    const moved=sig(cur)!==sig(t);
+    Object.assign(cur,{...t,id:cur.id});
+    if(cur.pointsSource==='auto'&&moved)cur.points=tripPoints(cur,S.places);
+    save();render();closeDrawer();
+    document.getElementById('row-'+cur.id)?.focus({preventScroll:true});toast('Viaje actualizado');return;
+  }
+  t.points=tripPoints(t,S.places);t.pointsSource='auto';
   S.trips.push(t);save();render();showTripSummary(t);toast('Viaje guardado');
 }
 function showTripSummary(t){
@@ -1462,36 +1501,36 @@ function showTripSummary(t){
   $('#dlSummary').focus();
 }
 
-/* ---- Nueva carga ---- */
-function openFuelPanel(){
+/* ---- Nueva carga / Editar carga ---- */
+function openFuelPanel(edit){
   closeMenu();derive();
-  if(!S.vehicles.length)return noVehicleDrawer('Nueva carga');
-  const dv=defVeh(),today=isoDate(new Date());
-  openDrawer(drawerHead('Nueva carga de gasolina','fuel')+`
+  if(!S.vehicles.length)return noVehicleDrawer(edit?'Editar carga':'Nueva carga');
+  const dv=edit&&vehById(edit.vehicleId)?edit.vehicleId:defVeh(),today=isoDate(new Date());
+  openDrawer(drawerHead(edit?'Editar carga':'Nueva carga de gasolina','fuel',edit?'Editar registro':undefined)+`
   <form id="fuelForm" class="drawer-body" novalidate autocomplete="off">
     <div class="row row-2">
-      <div class="field"><label for="fDate">Fecha</label><input class="input" type="date" id="fDate" value="${today}"><div class="err" data-err="fDate"></div></div>
+      <div class="field"><label for="fDate">Fecha</label><input class="input" type="date" id="fDate" value="${edit?edit.date:today}"><div class="err" data-err="fDate"></div></div>
       <div class="field"><label for="fVeh">Vehículo</label><select class="input" id="fVeh">${vehOptions(dv)}</select></div>
     </div>
-    <div class="field"><label for="fStation">Gasolinera</label><div class="combo"><input class="input" id="fStation" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fStation-lb" placeholder="Ej. Pemex Av. Universidad" autocomplete="off"><ul class="combo-list" id="fStation-lb" role="listbox" aria-label="Gasolineras frecuentes" hidden></ul></div><div class="err" data-err="fStation"></div></div>
-    <div class="field"><label for="fOdo">Odómetro</label><div class="input-unit"><input class="input num" type="number" step="1" min="0" id="fOdo" inputmode="numeric"><span>km</span></div><div class="help" id="fOdoHelp"></div><div class="err" data-err="fOdo"></div></div>
+    <div class="field"><label for="fStation">Gasolinera</label><div class="combo"><input class="input" id="fStation" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fStation-lb" placeholder="Ej. Pemex Av. Universidad" value="${esc(edit?.station||'')}" autocomplete="off"><ul class="combo-list" id="fStation-lb" role="listbox" aria-label="Gasolineras frecuentes" hidden></ul></div><div class="err" data-err="fStation"></div></div>
+    <div class="field"><label for="fOdo">Odómetro</label><div class="input-unit"><input class="input num" type="number" step="1" min="0" id="fOdo" value="${edit?edit.odometer:''}" inputmode="numeric"><span>km</span></div><div class="help" id="fOdoHelp"></div><div class="err" data-err="fOdo"></div></div>
     <div class="row row-2">
-      <div class="field"><label for="fLit">Litros</label><div class="input-unit"><input class="input num" type="number" step="0.01" min="0" id="fLit" inputmode="decimal"><span>L</span></div><div class="err" data-err="fLit"></div></div>
-      <div class="field"><label for="fPrice">Precio por litro</label><div class="input-unit pre"><input class="input num" type="number" step="0.01" min="0" id="fPrice" value="${priceOf(dv)?NF2.format(priceOf(dv)).replace(/,/g,''):''}" inputmode="decimal"><span>$</span></div><div class="err" data-err="fPrice"></div></div>
+      <div class="field"><label for="fLit">Litros</label><div class="input-unit"><input class="input num" type="number" step="0.01" min="0" id="fLit" value="${edit?edit.liters:''}" inputmode="decimal"><span>L</span></div><div class="err" data-err="fLit"></div></div>
+      <div class="field"><label for="fPrice">Precio por litro</label><div class="input-unit pre"><input class="input num" type="number" step="0.01" min="0" id="fPrice" value="${edit?edit.price:priceOf(dv)?NF2.format(priceOf(dv)).replace(/,/g,''):''}" inputmode="decimal"><span>$</span></div><div class="err" data-err="fPrice"></div></div>
     </div>
     <div class="total-box"><span>Total calculado</span><b class="num" id="fTotal">$0.00</b></div>
-    <button type="button" class="switch" role="switch" aria-checked="true" id="fFull"><span><b>Tanque lleno</b><small>Necesario para calcular el km/L entre dos cargas</small></span><span class="track"></span></button>
+    <button type="button" class="switch" role="switch" aria-checked="${edit?!!edit.full:true}" id="fFull"><span><b>Tanque lleno</b><small>Necesario para calcular el km/L entre dos cargas</small></span><span class="track"></span></button>
     <div class="calc two" aria-live="polite"><div><small>Desde el último lleno</small><b id="fKm" class="empty-v">—</b></div><div><small>Rendimiento</small><b id="fKmpl" class="empty-v">—</b></div></div>
     <p class="muted-xs" id="fNote" style="margin-top:10px"></p>
   </form>
-  <div class="drawer-foot"><span class="foot-hint hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> guarda</span><button type="button" class="btn btn-ghost" data-dz="close">Cancelar</button><button type="submit" form="fuelForm" class="btn btn-primary">${icon('check',16)} Guardar carga</button></div>`,'#fStation');
-  const f=$('#fuelForm'),g=id=>f.querySelector('#'+id);let priceDirty=false;
+  ${drawerFoot('fuelForm',edit?'Guardar cambios':'Guardar carga',edit&&{kind:'fuel',id:edit.id})}`,edit?'#fDate':'#fStation');
+  const f=$('#fuelForm'),g=id=>f.querySelector('#'+id);let priceDirty=!!edit;
   setupCombo(g('fStation'),stationOpts,v=>`Nueva gasolinera: “${v}”`);
   const setV=(id,html)=>{const el=g(id);el.innerHTML=html??'—';el.classList.toggle('empty-v',html==null);};
   const upd=()=>{
     const vid=g('fVeh').value,odo=parseFloat(g('fOdo').value),lit=parseFloat(g('fLit').value),pr=parseFloat(g('fPrice').value),full=g('fFull').getAttribute('aria-checked')==='true';
     g('fTotal').textContent=MXN.format(isFinite(lit)&&isFinite(pr)?lit*pr:0);
-    const loads=S.fuel.filter(x=>x.vehicleId===vid).sort((a,b)=>a.odometer-b.odometer);
+    const loads=S.fuel.filter(x=>x.vehicleId===vid&&x.id!==edit?.id).sort((a,b)=>a.odometer-b.odometer);
     const lastOdo=loads.length?loads[loads.length-1].odometer:null;
     g('fOdoHelp').textContent=lastOdo!=null?`Última carga de este vehículo: ${NF0.format(lastOdo)} km`:'Primera carga registrada para este vehículo';
     let lastFull=null,acc=0;
@@ -1509,23 +1548,29 @@ function openFuelPanel(){
   g('fPrice').addEventListener('input',()=>{priceDirty=true;});
   g('fVeh').addEventListener('change',()=>{if(!priceDirty){const p=priceOf(g('fVeh').value);g('fPrice').value=p?p.toFixed(2):'';}upd();});
   g('fFull').addEventListener('click',()=>{const el=g('fFull');el.setAttribute('aria-checked',String(el.getAttribute('aria-checked')!=='true'));upd();});
-  f.addEventListener('submit',e=>{e.preventDefault();saveFuel(f);});
+  f.addEventListener('submit',e=>{e.preventDefault();saveFuel(f,edit);});
   upd();
+  if(edit)guardChanges(f);
 }
-function saveFuel(f){
+function saveFuel(f,edit){
   const g=id=>f.querySelector('#'+id),errs=[];const chk=(id,msg)=>{setErr(f,id,msg);if(msg)errs.push(id);};
   const vid=g('fVeh').value,date=g('fDate').value,st=g('fStation').value.trim().replace(/\s+/g,' '),odo=parseFloat(g('fOdo').value),lit=parseFloat(g('fLit').value),pr=parseFloat(g('fPrice').value),full=g('fFull').getAttribute('aria-checked')==='true';
   chk('fDate',date?'':'Elige la fecha.');
   chk('fStation',st?'':'Escribe la gasolinera.');
-  chk('fOdo',!isFinite(odo)||odo<=0?'Captura el odómetro.':S.fuel.some(x=>x.vehicleId===vid&&Math.abs(x.odometer-odo)<.5)?'Ya hay una carga con ese odómetro.':'');
+  chk('fOdo',!isFinite(odo)||odo<=0?'Captura el odómetro.':S.fuel.some(x=>x.id!==edit?.id&&x.vehicleId===vid&&Math.abs(x.odometer-odo)<.5)?'Ya hay una carga con ese odómetro.':'');
   chk('fLit',!isFinite(lit)||lit<=0?'Captura los litros.':lit>200?'Revisa la cantidad de litros.':'');
   chk('fPrice',!isFinite(pr)||pr<=0?'Captura el precio por litro.':pr>100?'Revisa el precio por litro.':'');
   if(errs.length){g(errs[0]).focus();return;}
   const canon=S.fuel.find(x=>norm(x.station)===norm(st))?.station||st;
-  const nf={id:uid('f'),date,station:canon,odometer:odo,liters:+lit.toFixed(2),price:+pr.toFixed(2),full,vehicleId:vid};
-  S.fuel.push(nf);save();render();derive();
-  const k=D.kmpl[nf.id];closeDrawer();
-  toast(k?`Carga guardada · ${NF1.format(k)} km/L`:'Carga guardada');
+  const cur=edit&&S.fuel.find(x=>x.id===edit.id);
+  if(edit&&!cur){closeDrawer();return;}
+  const nf=cur||{id:uid('f')};
+  Object.assign(nf,{date,station:canon,odometer:odo,liters:+lit.toFixed(2),price:+pr.toFixed(2),full,vehicleId:vid});
+  if(!cur)S.fuel.push(nf);
+  save();render();derive();closeDrawer();
+  if(cur)document.querySelector(`[data-action="edit-fuel"][data-id="${nf.id}"]`)?.focus({preventScroll:true});
+  const k=D.kmpl[nf.id];
+  toast(cur?(k?`Carga actualizada · ${NF1.format(k)} km/L`:'Carga actualizada'):(k?`Carga guardada · ${NF1.format(k)} km/L`:'Carga guardada'));
 }
 
 /* ================= PNG con canvas ================= */
@@ -1632,7 +1677,7 @@ async function importJSON(text){
   const places=(Array.isArray(d.places)?d.places:[]).filter(p=>p&&p.name).map(p=>cleanPlace(p,ver<DATA_VERSION));
   const trips=d.trips.filter(t=>t&&okDate(t.date)&&okTime(t.depart)&&okTime(t.arrive)&&isFinite(t.odoStart)&&isFinite(t.odoEnd)&&t.origin&&t.destination).map(t=>{
     const c={id:String(t.id||uid('t')),date:String(t.date).slice(0,10),depart:t.depart,arrive:t.arrive,origin:String(t.origin),destination:String(t.destination),odoStart:+t.odoStart,odoEnd:+t.odoEnd,vehicleId:String(t.vehicleId||''),tag:t.tag==='Personal'?'Personal':'Trabajo'};
-    c.points=pointsFor(c,t.points,places);return c;
+    return Object.assign(c,resolvePoints(c,t.points,t.pointsSource,places));
   });
   const fuel=d.fuel.filter(f=>f&&okDate(f.date)&&isFinite(f.odometer)&&isFinite(f.liters)&&isFinite(f.price)).map(f=>({id:String(f.id||uid('f')),date:String(f.date).slice(0,10),station:String(f.station||'Sin nombre'),odometer:+f.odometer,liters:+f.liters,price:+f.price,full:f.full!==false,vehicleId:String(f.vehicleId||'')}));
   const ok=await confirmDialog({title:'¿Reemplazar tus datos?',body:`Se importarán ${trips.length} viajes, ${fuel.length} cargas, ${places.length} lugares y ${vehicles.length} vehículos. Tus datos actuales se reemplazarán.`,ok:'Importar',danger:false});
@@ -1644,6 +1689,17 @@ async function importJSON(text){
 }
 
 /* ================= Eventos de contenido ================= */
+/* Eliminar con confirmación; devuelven true si se eliminó (los usa también el pie del panel en modo edición) */
+async function deleteTrip(id){
+  const t=S.trips.find(x=>x.id===id);if(!t)return false;
+  if(!await confirmDialog({title:'¿Eliminar este viaje?',body:`${t.origin} → ${t.destination}, ${fmtDate(t.date,{day:'numeric',month:'long'})}. Esta acción no se puede deshacer.`,ok:'Eliminar viaje'}))return false;
+  S.trips=S.trips.filter(x=>x.id!==id);S.ui.selTrip=null;save();render();toast('Viaje eliminado');return true;
+}
+async function deleteFuel(id){
+  const f=S.fuel.find(x=>x.id===id);if(!f)return false;
+  if(!await confirmDialog({title:'¿Eliminar esta carga?',body:`${f.station}, ${fmtDate(f.date,{day:'numeric',month:'long'})} · ${MXN.format(fuelTotal(f))}. El rendimiento de las cargas cercanas se recalculará.`,ok:'Eliminar carga'}))return false;
+  S.fuel=S.fuel.filter(x=>x.id!==id);save();render();toast('Carga eliminada');return true;
+}
 contentEl.addEventListener('click',async e=>{
   const el=e.target.closest('[data-action]');if(!el||!contentEl.contains(el)||el.disabled)return;
   const a=el.dataset.action,id=el.dataset.id;
@@ -1659,11 +1715,11 @@ contentEl.addEventListener('click',async e=>{
     case 'filter-tag':S.ui.tf.tag=el.dataset.tag;save();render();break;
     case 'clear-filters':S.ui.tf={tag:'Todos',vehicle:'all',from:'',to:''};S.ui.q='';qEl.value='';save();render();break;
     case 'download-trip':{const t=S.trips.find(x=>x.id===id);if(t)downloadTripPNG(t);break;}
-    case 'delete-trip':{const t=S.trips.find(x=>x.id===id);if(!t)break;
-      if(await confirmDialog({title:'¿Eliminar este viaje?',body:`${t.origin} → ${t.destination}, ${fmtDate(t.date,{day:'numeric',month:'long'})}. Esta acción no se puede deshacer.`,ok:'Eliminar viaje'})){S.trips=S.trips.filter(x=>x.id!==id);S.ui.selTrip=null;save();render();toast('Viaje eliminado');}break;}
+    case 'edit-trip':{const t=S.trips.find(x=>x.id===id);if(t)openTripPanel(t);break;}
+    case 'delete-trip':deleteTrip(id);break;
     case 'fuel-veh':S.ui.ff=id;save();render();break;
-    case 'delete-fuel':{const f=S.fuel.find(x=>x.id===id);if(!f)break;
-      if(await confirmDialog({title:'¿Eliminar esta carga?',body:`${f.station}, ${fmtDate(f.date,{day:'numeric',month:'long'})} · ${MXN.format(fuelTotal(f))}. El rendimiento de las cargas cercanas se recalculará.`,ok:'Eliminar carga'})){S.fuel=S.fuel.filter(x=>x.id!==id);save();render();toast('Carga eliminada');}break;}
+    case 'edit-fuel':{const f=S.fuel.find(x=>x.id===id);if(f)openFuelPanel(f);break;}
+    case 'delete-fuel':deleteFuel(id);break;
     case 'place-select':S.ui.selPlace=S.ui.selPlace===id?null:id;S.ui.selPair=null;render();{const f=document.getElementById('pl-'+id)&&e.target.closest('.row-btn')?document.getElementById('pl-'+id):document.getElementById('pin-'+id);f?.focus({preventScroll:true});}break;
     case 'pair-select':S.ui.selPair=S.ui.selPair===el.dataset.key?null:el.dataset.key;render();document.getElementById(el.id)?.focus({preventScroll:true});break;
     case 'clear-place':S.ui.selPlace=null;S.ui.selPair=null;render();break;
@@ -1725,7 +1781,7 @@ document.addEventListener('keydown',e=>{
   const t=e.target,typing=t instanceof HTMLElement&&(t.matches('input,textarea,select')||t.isContentEditable);
   if(e.key==='Escape'){
     if(!menu.hidden){e.preventDefault();closeMenu(true);return;}
-    if(drawerOpen){e.preventDefault();closeDrawer();return;}
+    if(drawerOpen){e.preventDefault();requestCloseDrawer();return;}
     if(t===qEl){if(qEl.value){qEl.value='';S.ui.q='';render();}else qEl.blur();return;}
     if(S.ui.view==='viajes'&&S.ui.selTrip){const id=S.ui.selTrip;S.ui.selTrip=null;save();render();document.getElementById('row-'+id)?.focus({preventScroll:true});return;}
     if(S.ui.view==='lugares'&&(S.ui.selPlace||S.ui.selPair)){S.ui.selPlace=null;S.ui.selPair=null;render();return;}
@@ -1733,8 +1789,10 @@ document.addEventListener('keydown',e=>{
   }
   if(typing||e.ctrlKey||e.metaKey||e.altKey)return;
   const k=e.key.toLowerCase();
+  if(drawerGuard&&'nge'.includes(k)&&k.length===1)return; /* con un panel de edición abierto no se reemplaza */
   if(k==='n'){e.preventDefault();openTripPanel();}
   else if(k==='g'){e.preventDefault();openFuelPanel();}
+  else if(k==='e'){const t=!drawerOpen&&S.ui.view==='viajes'&&S.trips.find(x=>x.id===S.ui.selTrip);if(t){e.preventDefault();openTripPanel(t);}}
   else if(e.key==='/'){e.preventDefault();focusSearch();}
 });
 
