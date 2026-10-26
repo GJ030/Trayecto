@@ -15,15 +15,5 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
-  {
-    // Módulos JavaScript de la fase 2; se convierten a TypeScript en la fase 3.
-    files: ['src/**/*.js'],
-    languageOptions: { globals: { maplibregl: 'readonly' } },
-    rules: {
-      '@typescript-eslint/no-unused-expressions': 'off',
-      'no-useless-assignment': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
-    },
-  },
   prettier,
 );
