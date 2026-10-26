@@ -23,8 +23,8 @@ Todo el JavaScript está en un solo IIFE al final del archivo, dividido en secci
 | Utilidades | `$`, `esc`, `norm`, fechas (`isoDate`, `parseDate`), formatos (`fmtDate` con caché, `NF*`, `MXN`), `hashStr`, `fin` |
 | Íconos | `ICONS` y `icon()` |
 | Almacenamiento | `Store` (clave `trayecto:v2`, lee y migra `trayecto:v1`, `retireLegacy`) |
-| Datos de ejemplo | `SEED_GEO`, `tripPoints` (generador de rutas), `cleanPoints`, `resolvePoints`, `cleanPlace`, `seed`, `migrate`, `normalize` y el arranque |
-| Cálculos | `derive` (km/L, precios), `tripKm/Dur/Speed/Cost`, `placeVisits`, `pairStats` |
+| Datos de ejemplo | `SEED_GEO`, `cleanComputer`, `tripPoints` (generador de rutas), `cleanPoints`, `resolvePoints`, `cleanPlace`, `seed`, `migrate`, `normalize` y el arranque |
+| Cálculos | `derive` (km/L, precios), `tripKm/Dur/Speed/Cost`, `compOf`/`tripKmpl`/`tripLiters`/`fmtComp`, `compAccuracy`/`compAccHTML`, `placeVisits`, `pairStats` |
 | Mapas SVG | `project` / `placeXY` / `placePos`, `routePts`, `routeMap`, `placesMap`: **respaldo sin conexión** |
 | Mapas con MapLibre | carga (`mapAssets`), registro `MapReg` (`parkMaps`/`mountMaps`), mapa de viaje (`buildMap`), reproducción (`Play`), mapa de lugares (`buildPlacesMap`, `refreshPlaces`) y modo ubicación (`Loc`) |
 | Gráficas | `barChart`, `lineChart`, `sparkline` |
@@ -49,8 +49,11 @@ place: { id, name, area, lat, lng, kind }          // lat/lng reales; null = sin
                                                     // con lat/lng NO se guarda x/y (se proyecta); sin ellos se conserva x/y estimado
 trip:  { id, date, depart, arrive, origin, destination, odoStart, odoEnd, vehicleId, tag,
          points: [{ lat, lng, t (ISO), speed (km/h) }],   // 20–60 puntos
-         pointsSource: 'auto' | 'imported' }
+         pointsSource: 'auto' | 'imported',
+         computerKmpl: number | null,                     // rendimiento de la computadora, normalizado a km/L (3–40)
+         computerUnit: 'kmpl' | 'l100' | null }           // unidad en que se capturó, solo para mostrarlo igual
 fuel:  { id, date, station, odometer, liters, price, full, vehicleId }
+settings: { defaultVehicle, defaultTag, hints, lastBackup, computerUnit }   // computerUnit = última unidad usada en el formulario
 ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ... }
 ```
 
@@ -59,6 +62,16 @@ ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ...
 - `tripPoints` es determinista (semilla = id del viaje): recorrido ortogonal tipo calle, puntos y velocidades coherentes con la hora de salida/llegada; el promedio de `speed` coincide con la velocidad del viaje. Devuelve `[]` si origen o destino no tienen lat/lng.
 - **Migración v1 → v2** (`migrate`, también al importar): los lugares de ejemplo reciben lat/lng por nombre solo si conservan su posición original; se generan los `points` y `pointsSource` que falten. La clave `trayecto:v1` se borra únicamente cuando los datos migrados ya quedaron guardados en `trayecto:v2`.
 - **Respaldo JSON**: `{ app, version, exportedAt, data }`. Al importar se validan lat/lng (rango), se descartan puntos inválidos, se regeneran los que falten y se rechaza una versión mayor a 2. Los CSV (viajes, cargas) llevan BOM UTF-8 y neutralizan celdas que empiezan con `= + - @`.
+
+## Rendimiento de la computadora por viaje
+
+Campo opcional «Rendimiento de la computadora» (lo que marca el tablero al terminar el viaje) en el formulario de viaje, nuevo y editar.
+
+- **Captura** (`openTripPanel`, `readComputer`): número + unidad (km/L o L/100 km; se recuerda la última en `settings.computerUnit`, y al editar se muestra la unidad original). Rangos: 3–40 km/L, equivalente 2.5–33.3 L/100 km; fuera de rango bloquea el guardado y marca el campo. Al capturarlo, la nota de base cambia a «(14.2 km/L de la computadora · $24.30/L)» y se muestran los **litros estimados** (siempre, con o sin dato).
+- **Modelo**: `trip.computerKmpl` (km/L, `null` si no se capturó) y `trip.computerUnit` (`'kmpl'|'l100'|null`). `cleanComputer` es la única regla de saneado y se aplica en `normalize` (migración: datos guardados antes de 2.1 quedan en `null`), `parseBackup` (importar y validar antes de escribir el archivo) y `saveTrip`; un valor fuera de rango se vuelve `null` sin descartar el viaje. **No se subió `DATA_VERSION`**: los campos son opcionales y los respaldos anteriores siguen siendo válidos. Capturarlo no toca `points`.
+- **Costo**: `tripKmpl(t)` = rendimiento de la computadora o, si falta, el promedio del vehículo (`kmplOf`); `tripLiters` y `tripCost` salen de ahí, así que tablas, Inicio, Estadísticas y el CSV lo usan sin cambios.
+- **Dónde se ve**: detalle del viaje («Rendimiento (computadora)», «Litros estimados» y «Base del costo» con «de la computadora»), tarjeta PNG (línea bajo el vehículo) y CSV de viajes (columna `rendimiento_computadora_km_l`, **al final** para no mover las demás).
+- **Precisión de la computadora** (`compAccuracy`, en Vehículos por vehículo y en Estadísticas): promedio aritmético de los `computerKmpl` del vehículo contra el promedio de los km/L de las cargas de tanque lleno **cuyo intervalo** (desde la carga llena anterior hasta su fecha) toca el periodo de esos viajes (primer a último viaje con dato). Solo aparece con ≥ 3 viajes con dato y al menos una carga con rendimiento calculado en ese periodo; si no, se oculta (p. ej. viajes posteriores a la última carga llena). Texto: «La computadora marca N % más/menos que el real» (o «coincide con el real» si la diferencia es < 0.5 %).
 
 ## Editar, eliminar y fusionar lugares
 
@@ -103,6 +116,6 @@ File System Access API (`showDirectoryPicker`, modo `readwrite`). Sin la API (`F
 
 ## Pruebas
 
-No hay suite automática. La persistencia en archivo se probó con Chrome real y un handle de OPFS en lugar del selector nativo (OPFS no existe en `file://`, así que la app se sirvió desde `localhost`; en `file://` se comprobó que la API existe y que la app arranca limpia): elegir carpeta, archivo nuevo y existente, debounce y agrupación, recarga con permiso en `prompt` y reconexión, borrar `localStorage` y recuperar desde el archivo, conflicto (archivo / app / decidir después), archivo borrado, carpeta eliminada, archivo inválido, escritura fallida y recuperación en la siguiente sesión, poda a 14 respaldos, menú contraído y navegador sin la API. El selector de carpetas nativo y su aviso de permiso de Chrome se deben probar a mano. Editar/eliminar/fusionar lugares se probó con Chrome real por `file://` (menú y teclado, validaciones, renombrar con `points` intactos y vuelta atrás idéntica, eliminar con y sin viajes, fusión con rutas regeneradas, Deshacer idéntico al estado previo, caducidad a 6 s, recreación del lugar y pines del mapa real). El resto de la app se probó con Chrome real por `file://` (CDP con WebGL por software): abrir cada vista, alternar capas, seleccionar 20 viajes seguidos (1 contexto WebGL vivo, consola limpia), reproducción, modo ubicación, edición, respaldo ida y vuelta, importación v1, datos vacíos y sin conexión. Prueba manual recomendada con GPU real y conexión lenta.
+No hay suite automática. La persistencia en archivo se probó con Chrome real y un handle de OPFS en lugar del selector nativo (OPFS no existe en `file://`, así que la app se sirvió desde `localhost`; en `file://` se comprobó que la API existe y que la app arranca limpia): elegir carpeta, archivo nuevo y existente, debounce y agrupación, recarga con permiso en `prompt` y reconexión, borrar `localStorage` y recuperar desde el archivo, conflicto (archivo / app / decidir después), archivo borrado, carpeta eliminada, archivo inválido, escritura fallida y recuperación en la siguiente sesión, poda a 14 respaldos, menú contraído y navegador sin la API. El selector de carpetas nativo y su aviso de permiso de Chrome se deben probar a mano. Editar/eliminar/fusionar lugares se probó con Chrome real por `file://` (menú y teclado, validaciones, renombrar con `points` intactos y vuelta atrás idéntica, eliminar con y sin viajes, fusión con rutas regeneradas, Deshacer idéntico al estado previo, caducidad a 6 s, recreación del lugar y pines del mapa real). El rendimiento de la computadora se probó con Chrome real por `file://` (ambas unidades, nuevo y editado, rangos, costo/litros, detalle, PNG, JSON/CSV, importación de respaldos con y sin los campos y la comparación con cargas del ejemplo). El resto de la app se probó con Chrome real por `file://` (CDP con WebGL por software): abrir cada vista, alternar capas, seleccionar 20 viajes seguidos (1 contexto WebGL vivo, consola limpia), reproducción, modo ubicación, edición, respaldo ida y vuelta, importación v1, datos vacíos y sin conexión. Prueba manual recomendada con GPU real y conexión lenta.
 
 El repositorio git vive en esta carpeta (`curso qlik/trayecto/`); los mensajes de commit no llevan trailer de coautoría.

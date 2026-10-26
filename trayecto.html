@@ -447,6 +447,12 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
 .modal p{color:var(--text-2);font-size:14px}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 .modal.wide{width:480px}
+.comp-row{display:grid;grid-template-columns:1fr 130px;gap:10px}
+.comp-acc{margin-top:14px;padding:12px 14px;border-radius:12px;background:var(--surface-2);display:flex;flex-direction:column;gap:3px}
+.comp-acc b{font-weight:650;color:var(--accent)}
+.comp-acc small{color:var(--muted);font-size:12px}
+.acc-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.acc-list .comp-acc{margin-top:0}
 .modal select.input{width:100%}
 .merge-sum{min-height:40px;color:var(--text-2);font-size:13px}
 .pl-li{position:relative}
@@ -775,6 +781,13 @@ function cleanPlace(p,legacy){
   if(lat==null&&fin(p.x)&&fin(p.y)){o.x=+p.x;o.y=+p.y;}
   return o;
 }
+/* Rendimiento de la computadora del auto (opcional por viaje): se guarda normalizado en km/L (computerKmpl) y la unidad original (computerUnit) solo sirve para mostrarlo como se capturó.
+   Fuera de 3–40 km/L (2.5–33.3 L/100 km) se descarta. Se usa al normalizar, importar y validar para que nunca haya valores absurdos */
+const CK_MIN=3,CK_MAX=40;
+function cleanComputer(k,u){
+  const v=k==null||k===''?NaN:+k;
+  return v>=CK_MIN&&v<=CK_MAX?{computerKmpl:+v.toFixed(4),computerUnit:u==='l100'?'l100':'kmpl'}:{computerKmpl:null,computerUnit:null};
+}
 function seed(){
   const T=startOfToday(), d=a=>isoDate(addDays(T,-a));
   const vehicles=[
@@ -819,7 +832,7 @@ function seed(){
     [10,'Shell Insurgentes Sur',49505,35.6,24.35,true,'v1']
   ];
   const fuel=FU.map(([a,st,odo,l,p,full,v],i)=>({id:'f'+(i+1),date:d(a),station:st,odometer:odo,liters:l,price:p,full,vehicleId:v}));
-  return {version:DATA_VERSION,vehicles,places,trips,fuel,settings:{defaultVehicle:'v1',defaultTag:'Trabajo',hints:true,lastBackup:null},ui:{}};
+  return {version:DATA_VERSION,vehicles,places,trips,fuel,settings:{defaultVehicle:'v1',defaultTag:'Trabajo',hints:true,lastBackup:null,computerUnit:'kmpl'},ui:{}};
 }
 /* v1 → v2: asigna lat/lng a los lugares de ejemplo (por nombre) y genera los points que faltan; no borra nada.
    También completa pointsSource en los viajes v2 que aún no lo tienen */
@@ -834,8 +847,8 @@ function migrate(d){
 function normalize(d){
   const o=Object.assign({version:DATA_VERSION,vehicles:[],places:[],trips:[],fuel:[],settings:{},ui:{}},d||{});
   o.places.forEach(p=>{if(p.lat===undefined)p.lat=null;if(p.lng===undefined)p.lng=null;});
-  o.trips.forEach(t=>{if(!Array.isArray(t.points))t.points=[];if(t.pointsSource!=='auto'&&t.pointsSource!=='imported')t.pointsSource=t.points.length?'imported':'auto';});
-  o.settings=Object.assign({defaultVehicle:o.vehicles[0]?.id||null,defaultTag:'Trabajo',hints:true,lastBackup:null},o.settings||{});
+  o.trips.forEach(t=>{if(!Array.isArray(t.points))t.points=[];if(t.pointsSource!=='auto'&&t.pointsSource!=='imported')t.pointsSource=t.points.length?'imported':'auto';Object.assign(t,cleanComputer(t.computerKmpl,t.computerUnit));});
+  o.settings=Object.assign({defaultVehicle:o.vehicles[0]?.id||null,defaultTag:'Trabajo',hints:true,lastBackup:null,computerUnit:'kmpl'},o.settings||{});
   o.ui=Object.assign({view:'inicio',collapsed:false,q:'',sort:{key:'date',dir:'desc'},selTrip:null,ff:'all',statTab:'km',dashVeh:null,selPlace:null,selPair:null,placesLayer:'lugares'},o.ui||{});
   o.ui.tf=Object.assign({tag:'Todos',vehicle:'all',from:'',to:''},o.ui.tf||{});
   o.ui.q='';
@@ -881,7 +894,31 @@ function derive(){
 }
 const kmplOf=vid=>D.vs[vid]?.avg||12;
 const priceOf=vid=>D.vs[vid]?.lastPrice||D.latestPrice;
-const tripCost=t=>tripKm(t)/kmplOf(t.vehicleId)*priceOf(t.vehicleId);
+/* Con rendimiento de la computadora el viaje usa ese valor; sin él, el promedio del vehículo */
+const compOf=t=>t.computerKmpl>0?t.computerKmpl:null;
+const tripKmpl=t=>compOf(t)||kmplOf(t.vehicleId);
+const tripLiters=t=>tripKm(t)/tripKmpl(t);
+const tripCost=t=>tripLiters(t)*priceOf(t.vehicleId);
+const fmtComp=t=>t.computerUnit==='l100'?`${NF1.format(100/t.computerKmpl)} L/100 km`:`${NF1.format(t.computerKmpl)} km/L`;
+/* Precisión de la computadora de un vehículo: promedio de los rendimientos capturados contra el real de las cargas de tanque lleno cuyo intervalo
+   (desde la carga llena anterior) toca el periodo de esos viajes. Requiere ≥3 viajes con dato y al menos una carga con rendimiento calculado */
+function compAccuracy(vid){
+  const tr=S.trips.filter(t=>t.vehicleId===vid&&compOf(t));
+  if(tr.length<3)return null;
+  const from=tr.reduce((m,t)=>t.date<m?t.date:m,tr[0].date),to=tr.reduce((m,t)=>t.date>m?t.date:m,tr[0].date);
+  const real=[];let prev=null;
+  for(const f of D.vs[vid]?.loads||[]){if(!f.full)continue;if(prev&&D.kmpl[f.id]!=null&&f.date>=from&&prev.date<=to)real.push(D.kmpl[f.id]);prev=f;}
+  if(!real.length)return null;
+  const comp=mean(tr.map(compOf)),r=mean(real);
+  return {n:tr.length,loads:real.length,comp,real:r,pct:(comp-r)/r*100,from,to};
+}
+function compAccHTML(vid,withName){
+  const a=compAccuracy(vid);if(!a)return '';
+  const v=vehById(vid),ab=Math.abs(a.pct);
+  const msg=ab<.5?'La computadora coincide con el real':`La computadora marca ${NF0.format(ab)} % ${a.pct>0?'más':'menos'} que el real`;
+  const rng=a.from===a.to?fmtDate(a.from,{day:'numeric',month:'short'}):`${fmtDate(a.from,{day:'numeric',month:'short'})} – ${fmtDate(a.to,{day:'numeric',month:'short'})}`;
+  return `<div class="comp-acc">${withName?`<div class="veh-h" style="font-weight:600;margin-bottom:6px"><span class="dot" style="background:${esc(v.color)}"></span>${esc(v.name)}</div>`:`<div class="stat-label">${icon('gauge',13)} Precisión de la computadora</div>`}<b>${msg}</b><small>Computadora ${NF1.format(a.comp)} km/L (${a.n} viajes) · Real ${NF1.format(a.real)} km/L (${a.loads} ${a.loads===1?'carga':'cargas'} de tanque lleno) · ${esc(rng)}</small></div>`;
+}
 const cpkOf=vid=>D.vs[vid]?.avg?priceOf(vid)/D.vs[vid].avg:null;
 function lastMonths(n){const d=new Date();const out=[];for(let i=n-1;i>=0;i--){const x=new Date(d.getFullYear(),d.getMonth()-i,1);out.push({key:monthKey(x),label:MONTHS[x.getMonth()],long:MONTHS_L[x.getMonth()]});}return out;}
 function placeVisits(){const m={};for(const p of S.places){const n=norm(p.name);m[p.id]=S.trips.filter(t=>norm(t.origin)===n||norm(t.destination)===n).length;}return m;}
@@ -1485,7 +1522,9 @@ function renderViajes(){
         <dt>Odómetro</dt><dd>${NF1.format(sel.odoStart)} → ${NF1.format(sel.odoEnd)} km</dd>
         <dt>Vehículo</dt><dd>${esc(vehName(sel.vehicleId))}</dd>
         <dt>Etiqueta</dt><dd>${tagHTML(sel.tag)}</dd>
-        <dt>Base del costo</dt><dd>${NF1.format(kmplOf(sel.vehicleId))} km/L · ${MXN.format(priceOf(sel.vehicleId))}/L</dd>
+        ${compOf(sel)?`<dt>Rendimiento (computadora)</dt><dd>${esc(fmtComp(sel))}</dd>`:''}
+        <dt>Litros estimados</dt><dd>${NF1.format(tripLiters(sel))} L</dd>
+        <dt>Base del costo</dt><dd>${NF1.format(tripKmpl(sel))} km/L${compOf(sel)?' de la computadora':''} · ${MXN.format(priceOf(sel.vehicleId))}/L</dd>
       </dl>
       <div class="detail-actions"><button class="btn btn-primary" data-action="download-trip" data-id="${sel.id}">${icon('download',16)} Tarjeta PNG</button><button class="btn" data-action="edit-trip" data-id="${sel.id}">${icon('edit',16)} Editar <kbd class="hint">E</kbd></button><button class="btn btn-danger" data-action="delete-trip" data-id="${sel.id}">${icon('trash',16)} Eliminar</button></div>
     </aside>`;
@@ -1612,6 +1651,8 @@ function renderEstadisticas(){
     </div>`:emptyState('car','Sin vehículos','Agrega un vehículo para comparar.','',true);
   const tags=['Trabajo','Personal'].map(tg=>{const a=tr6.filter(t=>t.tag===tg);return {tg,km:sum(a,tripKm),n:a.length,min:a.length?sum(a,tripDur)/a.length:0,cost:sum(a,tripCost)};});
   const tkm=Math.max(1e-9,tags[0].km+tags[1].km);
+  const accs=S.vehicles.map(v=>compAccHTML(v.id,true)).filter(Boolean);
+  const accCard=accs.length?`<section class="card span-12"><div class="card-title"><span>Precisión de la computadora</span><span class="muted-sm">Rendimiento capturado vs. real con tanque lleno</span></div><div class="acc-list">${accs.join('')}</div></section>`:'';
   return `<div class="view grid">
     <section class="card span-3"><div class="stat-label">${icon('route',14)} Km registrados</div><div class="stat-val">${NF0.format(km6)}<span class="u">km</span></div><p class="muted-xs" style="margin-top:10px">${tr6.length} viajes en 6 meses</p></section>
     <section class="card span-3"><div class="stat-label">${icon('wallet',14)} Gasto en gasolina</div><div class="stat-val">${money(sp6)}</div><p class="muted-xs" style="margin-top:10px">${fu6.length} cargas · ${NF0.format(sum(fu6,f=>+f.liters))} L</p></section>
@@ -1626,6 +1667,7 @@ function renderEstadisticas(){
       <div class="stack-bar" role="img" aria-label="Trabajo ${NF0.format(tags[0].km/tkm*100)}%, personal ${NF0.format(tags[1].km/tkm*100)}% de los kilómetros"><i style="width:${(tags[0].km/tkm*100).toFixed(1)}%;background:#6CA8FF"></i><i style="flex:1;background:#B69CFF"></i></div>
       <div class="tag-rows">${tags.map(t=>`<div>${tagHTML(t.tg)}<div class="stat-val md" style="margin-top:10px">${NF0.format(t.km/tkm*100)}<span class="u">% de km</span></div><dl class="meta" style="margin:12px 0 0"><dt>Kilómetros</dt><dd>${fmtKm(t.km)}</dd><dt>Viajes</dt><dd>${t.n}</dd><dt>Duración prom.</dt><dd>${t.n?fmtDurText(Math.round(t.min)):'—'}</dd><dt>Costo est.</dt><dd>${MXN.format(t.cost)}</dd></dl></div>`).join('')}</div>
     </section>
+    ${accCard}
   </div>`;
 }
 
@@ -1637,6 +1679,7 @@ function renderVehiculos(){
       <div class="stat-label">${icon('gauge',14)} Odómetro actual</div><div class="stat-val xl">${NF0.format(st.odo||0)}<span class="u">km</span></div>
       <div class="vc-stats"><div><b>${tr.length}</b><small>Viajes</small></div><div><b>${NF0.format(sum(tr,tripKm))}</b><small>Km registrados</small></div><div><b>${st.avg?NF1.format(st.avg):'—'}</b><small>km/L prom.</small></div><div><b>${c!=null?MXN.format(c):'—'}</b><small>Costo por km</small></div></div>
       ${v.tank?`<p class="muted-xs" style="margin-top:12px">Tanque de ${NF0.format(v.tank)} L${st.avg?` · autonomía aprox. ${NF0.format(v.tank*st.avg)} km`:''}</p>`:''}
+      ${compAccHTML(v.id)}
     </section>`;}).join('');
   return `<div class="view grid">
     ${S.vehicles.length?'':`<section class="card span-12">${emptyState('car','Agrega tu primer vehículo','Los viajes y las cargas se asocian a un vehículo para calcular rendimiento y costo por km.')}</section>`}
@@ -1860,6 +1903,7 @@ function openTripPanel(edit){
   closeMenu();derive();
   if(!S.vehicles.length)return noVehicleDrawer(edit?'Editar viaje':'Nuevo viaje');
   const dv=edit&&vehById(edit.vehicleId)?edit.vehicleId:defVeh(),now=new Date(),dep=`${pad(now.getHours())}:${pad(Math.floor(now.getMinutes()/5)*5)}`;
+  const hasC=!!(edit&&compOf(edit)),cu=hasC?edit.computerUnit:(S.settings.computerUnit==='l100'?'l100':'kmpl'),cval=hasC?+(cu==='l100'?100/edit.computerKmpl:edit.computerKmpl).toFixed(2):'';
   const combo=(id,label,ph,val)=>`<div class="field"><label for="${id}">${label}</label><div class="combo"><input class="input" id="${id}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-lb" placeholder="${ph}" value="${esc(val||'')}" autocomplete="off"><ul class="combo-list" id="${id}-lb" role="listbox" aria-label="Lugares guardados" hidden></ul></div><div class="err" data-err="${id}"></div></div>`;
   openDrawer(drawerHead(edit?'Editar viaje':'Nuevo viaje','route',edit?'Editar registro':undefined)+`
   <form id="tripForm" class="drawer-body" novalidate autocomplete="off">
@@ -1877,11 +1921,15 @@ function openTripPanel(edit){
       <div class="field"><label for="tVeh">Vehículo</label><select class="input" id="tVeh">${vehOptions(dv)}</select></div>
       <div class="field"><span class="lbl" id="tTagL">Etiqueta</span><div class="seg" role="radiogroup" aria-labelledby="tTagL">${['Trabajo','Personal'].map(t=>`<label><input type="radio" name="tTag" value="${t}" ${(edit?edit.tag:S.settings.defaultTag)===t?'checked':''}><span>${t}</span></label>`).join('')}</div></div>
     </div>
+    <div class="field"><label for="tComp">Rendimiento de la computadora (opcional)</label>
+      <div class="comp-row"><input class="input num" type="number" step="any" min="0" id="tComp" value="${cval}" inputmode="decimal" aria-describedby="tCompHelp tCompErr"><select class="input" id="tCompUnit" aria-label="Unidad del rendimiento"><option value="kmpl" ${cu==='kmpl'?'selected':''}>km/L</option><option value="l100" ${cu==='l100'?'selected':''}>L/100 km</option></select></div>
+      <div class="help" id="tCompHelp">El que marca el tablero al terminar el viaje. Si lo capturas, se usa para calcular el costo de este viaje</div><div class="err" id="tCompErr" data-err="tComp"></div></div>
     <div class="calc" aria-live="polite">
       <div><small>Distancia</small><b id="cKm" class="empty-v">—</b></div>
       <div><small>Duración</small><b id="cDur" class="empty-v">—</b></div>
       <div><small>Vel. promedio</small><b id="cSpd" class="empty-v">—</b></div>
     </div>
+    <div class="calc-foot"><span>Litros estimados</span><b id="cLit" style="color:var(--text)">—</b></div>
     <div class="calc-foot"><span>Costo estimado de combustible <span class="muted-xs" id="cBasis"></span></span><b id="cCost">—</b></div>
   </form>
   ${drawerFoot('tripForm',edit?'Guardar cambios':'Guardar viaje',edit&&{kind:'trip',id:edit.id})}`,edit?'#tDate':'#tOrigin');
@@ -1898,8 +1946,12 @@ function openTripPanel(edit){
     setV('cKm',km!=null?`${fmtKm(km)}<span class="u">km</span>`:null);
     setV('cDur',dur!=null?durHTML(dur):null);
     setV('cSpd',km!=null&&dur?`${NF0.format(km/(dur/60))}<span class="u">km/h</span>`:null);
-    g('cCost').textContent=km!=null?MXN.format(km/kmplOf(vid)*priceOf(vid)):'—';
-    g('cBasis').textContent=`(${NF1.format(kmplOf(vid))} km/L · ${MXN.format(priceOf(vid))}/L)`;
+    const cr=readComputer(f),kmpl=cr.kmpl||kmplOf(vid);
+    g('tComp').placeholder=g('tCompUnit').value==='l100'?'Ej. 7.0':'Ej. 14.2';
+    setErr(f,'tComp',cr.err);
+    g('cLit').textContent=km!=null?`${NF1.format(km/kmpl)} L`:'—';
+    g('cCost').textContent=km!=null?MXN.format(km/kmpl*priceOf(vid)):'—';
+    g('cBasis').textContent=`(${NF1.format(kmpl)} km/L${cr.kmpl?' de la computadora':''} · ${MXN.format(priceOf(vid))}/L)`;
   };
   f.addEventListener('input',upd);f.addEventListener('change',upd);
   g('tOdoS').addEventListener('input',()=>{odoDirty=true;});
@@ -1930,6 +1982,16 @@ function canonicalPlace(name,anchor,km){
   S.places.push({id:uid('p'),name:n,area:'',lat:null,lng:null,x:pos.x,y:pos.y,kind:'other'});
   return n;
 }
+/* Lee el rendimiento de la computadora del formulario: {kmpl (normalizado, null si vacío o inválido), unit, err} */
+function readComputer(f){
+  const raw=f.querySelector('#tComp').value.trim(),unit=f.querySelector('#tCompUnit').value==='l100'?'l100':'kmpl';
+  if(raw==='')return {kmpl:null,unit,err:''};
+  const v=parseFloat(raw);
+  if(!isFinite(v)||v<=0)return {kmpl:null,unit,err:'Escribe un número mayor a 0.'};
+  const k=unit==='l100'?100/v:v;
+  if(k<CK_MIN-1e-9||k>CK_MAX+1e-9)return {kmpl:null,unit,err:unit==='l100'?`Debe estar entre ${NF1.format(100/CK_MAX)} y ${NF1.format(100/CK_MIN)} L/100 km.`:`Debe estar entre ${CK_MIN} y ${CK_MAX} km/L.`};
+  return {kmpl:k,unit,err:''};
+}
 function saveTrip(f,edit){
   const g=id=>f.querySelector('#'+id);let errs=[];
   const o=g('tOrigin').value.trim(),d=g('tDest').value.trim(),date=g('tDate').value,dep=g('tDep').value,arr=g('tArr').value;
@@ -1941,9 +2003,11 @@ function saveTrip(f,edit){
   chk('tArr',!dep||!arr?'Indica la hora de salida y de llegada.':dep===arr?'La llegada debe ser distinta a la salida.':'');
   chk('tOdoS',isFinite(s)&&s>=0?'':'Captura el odómetro inicial.');
   chk('tOdoE',!isFinite(e)?'Captura el odómetro final.':isFinite(s)&&e<=s?'Debe ser mayor al inicial.':isFinite(s)&&e-s>2000?'La distancia parece demasiado grande.':'');
+  const cr=readComputer(f);chk('tComp',cr.err);
   if(errs.length){g(errs[0]).focus();return;}
   const oKnown=S.places.some(p=>norm(p.name)===norm(o)),origin=canonicalPlace(o,oKnown?null:d,e-s),destination=canonicalPlace(d,origin,e-s);
-  const t={id:uid('t'),date,depart:dep,arrive:arr,origin,destination,odoStart:s,odoEnd:e,vehicleId:g('tVeh').value,tag:f.querySelector('input[name=tTag]:checked')?.value||'Trabajo'};
+  const t={id:uid('t'),date,depart:dep,arrive:arr,origin,destination,odoStart:s,odoEnd:e,vehicleId:g('tVeh').value,tag:f.querySelector('input[name=tTag]:checked')?.value||'Trabajo',...cleanComputer(cr.kmpl,cr.unit)};
+  if(cr.kmpl)S.settings.computerUnit=cr.unit; /* recuerda la última unidad usada */
   if(edit){
     /* actualiza en su lugar (mismo id); la ruta se regenera solo si la generó la app y cambió algo de lo que la define */
     const cur=S.trips.find(x=>x.id===edit.id);if(!cur){closeDrawer();return;}
@@ -2075,6 +2139,7 @@ function tripCanvas(t){
   rr(x,76,248,tw+44,34,17);x.fillStyle=t.tag==='Personal'?'rgba(182,156,255,.14)':'rgba(108,168,255,.14)';x.fill();
   x.fillStyle=tagCol;x.beginPath();x.arc(94,265,4,0,Math.PI*2);x.fill();x.fillText(t.tag,106,266);
   x.fillStyle='#8A8A96';x.font=`500 19px ${F}`;x.fillText(`${vehName(t.vehicleId)} · odómetro ${NF1.format(t.odoStart)} → ${NF1.format(t.odoEnd)} km`,76,316);
+  if(compOf(t)){x.fillStyle=ACC;x.font=`600 19px ${F}`;x.fillText(`Rendimiento (computadora): ${fmtComp(t)}`,76,350);}
   const MX=760,MY=136,MW=364,MH=210;
   rr(x,MX,MY,MW,MH,18);x.fillStyle='#0F0F12';x.fill();x.save();rr(x,MX,MY,MW,MH,18);x.clip();
   x.strokeStyle='rgba(255,255,255,.045)';x.lineWidth=1;for(let i=MX+11;i<MX+MW;i+=22){x.beginPath();x.moveTo(i,MY);x.lineTo(i,MY+MH);x.stroke();}for(let j=MY+11;j<MY+MH;j+=22){x.beginPath();x.moveTo(MX,j);x.lineTo(MX+MW,j);x.stroke();}
@@ -2163,8 +2228,8 @@ function exportJSON(){
 }
 function exportCSV(kind){
   if(kind==='trips'){
-    const rows=[['fecha','salida','llegada','origen','destino','vehiculo','etiqueta','odometro_inicial','odometro_final','distancia_km','duracion_min','velocidad_kmh','costo_estimado_mxn']];
-    [...S.trips].sort((a,b)=>tripKey(a).localeCompare(tripKey(b))).forEach(t=>rows.push([t.date,t.depart,t.arrive,t.origin,t.destination,vehName(t.vehicleId),t.tag,t.odoStart,t.odoEnd,tripKm(t).toFixed(1),tripDur(t),tripSpeed(t).toFixed(1),tripCost(t).toFixed(2)]));
+    const rows=[['fecha','salida','llegada','origen','destino','vehiculo','etiqueta','odometro_inicial','odometro_final','distancia_km','duracion_min','velocidad_kmh','costo_estimado_mxn','rendimiento_computadora_km_l']];
+    [...S.trips].sort((a,b)=>tripKey(a).localeCompare(tripKey(b))).forEach(t=>rows.push([t.date,t.depart,t.arrive,t.origin,t.destination,vehName(t.vehicleId),t.tag,t.odoStart,t.odoEnd,tripKm(t).toFixed(1),tripDur(t),tripSpeed(t).toFixed(1),tripCost(t).toFixed(2),compOf(t)?+compOf(t).toFixed(2):'']));
     download(`trayecto-viajes-${isoDate(new Date())}.csv`,toCSV(rows),'text/csv;charset=utf-8');toast('Viajes exportados a CSV');
   }else{
     const rows=[['fecha','vehiculo','gasolinera','odometro','litros','precio_litro','total_mxn','tanque_lleno','km_l']];
@@ -2185,7 +2250,7 @@ function parseBackup(o){
   const places=(Array.isArray(d.places)?d.places:[]).filter(p=>p&&p.name).map(p=>cleanPlace(p,ver<DATA_VERSION));
   const trips=d.trips.filter(t=>t&&okDate(t.date)&&okTime(t.depart)&&okTime(t.arrive)&&isFinite(t.odoStart)&&isFinite(t.odoEnd)&&t.origin&&t.destination).map(t=>{
     const c={id:String(t.id||uid('t')),date:String(t.date).slice(0,10),depart:t.depart,arrive:t.arrive,origin:String(t.origin),destination:String(t.destination),odoStart:+t.odoStart,odoEnd:+t.odoEnd,vehicleId:String(t.vehicleId||''),tag:t.tag==='Personal'?'Personal':'Trabajo'};
-    return Object.assign(c,resolvePoints(c,t.points,t.pointsSource,places));
+    return Object.assign(c,cleanComputer(t.computerKmpl,t.computerUnit),resolvePoints(c,t.points,t.pointsSource,places));
   });
   const fuel=d.fuel.filter(f=>f&&okDate(f.date)&&isFinite(f.odometer)&&isFinite(f.liters)&&isFinite(f.price)).map(f=>({id:String(f.id||uid('f')),date:String(f.date).slice(0,10),station:String(f.station||'Sin nombre'),odometer:+f.odometer,liters:+f.liters,price:+f.price,full:f.full!==false,vehicleId:String(f.vehicleId||'')}));
   return {data:{vehicles,places,trips,fuel,settings:Object.assign({},d.settings||{})},raw:{trips:d.trips.length,fuel:d.fuel.length,vehicles:d.vehicles.length,places:Array.isArray(d.places)?d.places.length:0}};
