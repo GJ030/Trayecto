@@ -8,7 +8,7 @@
 :root{
   --bg:#0B0B0D; --surface:#16161A; --surface-2:#1C1C21; --surface-3:#24242A; --sidebar:#101013;
   --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.12);
-  --text:#EDEDF0; --text-2:#A6A6B0; --muted:#6E6E7A;
+  --text:#EDEDF0; --text-2:#A6A6B0; --muted:#8B8B97;
   --accent:#FFB020; --accent-ink:#1A1206; --accent-soft:rgba(255,176,32,.12);
   --green:#3DDC97; --green-soft:rgba(61,220,151,.12);
   --red:#FF6B6B; --red-soft:rgba(255,107,107,.12);
@@ -309,7 +309,7 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
 .bar{transform-box:fill-box;transform-origin:50% 100%;animation:grow .6s var(--ease) both}
 .bar-val{font-size:11px;fill:#8A8A96;font-variant-numeric:tabular-nums}
 .bar-val.hl{fill:#FFB020;font-weight:650}
-.bar-lbl{font-size:11px;fill:#6E6E7A}
+.bar-lbl{font-size:11px;fill:#8B8B97}
 .bar-lbl.hl{fill:#EDEDF0;font-weight:600}
 .avg-lbl{font-size:11px;fill:#3DDC97;font-weight:600}
 
@@ -322,7 +322,6 @@ th[aria-sort="ascending"] .si,th[aria-sort="descending"] .si{opacity:1;color:var
 .week-bars{margin-top:18px}
 .spend-wrap{display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:end}
 .spark{margin-top:16px}
-.rend-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
 
 /* ---------- Lugares ---------- */
 .list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
@@ -534,7 +533,15 @@ const NF1=new Intl.NumberFormat('es-MX',{minimumFractionDigits:1,maximumFraction
 const NF2=new Intl.NumberFormat('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const MXN=new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtKm=n=>NF1.format(n||0);
-const fmtDate=(s,o)=>parseDate(s).toLocaleDateString('es-MX',o||{weekday:'short',day:'numeric',month:'short'});
+/* Intl es lo más caro de las tablas grandes: se reutilizan los formateadores y los textos ya calculados */
+const DF=new Map(),DT=new Map();
+const fmtDate=(s,o)=>{
+  o=o||{weekday:'short',day:'numeric',month:'short'};const k=JSON.stringify(o),ck=s+'|'+k;
+  let r=DT.get(ck);if(r!==undefined)return r;
+  let f=DF.get(k);if(!f){f=new Intl.DateTimeFormat('es-MX',o);DF.set(k,f);}
+  if(DT.size>4000)DT.clear();
+  r=f.format(parseDate(s));DT.set(ck,r);return r;
+};
 const fmtDurText=m=>m<60?`${m} min`:`${Math.floor(m/60)} h ${pad(m%60)} min`;
 const durHTML=m=>m<60?`${Math.round(m)}<span class="u">min</span>`:`${Math.floor(m/60)}<span class="u">h</span> ${pad(Math.round(m%60))}<span class="u">min</span>`;
 const money=(v,dec)=>`<span class="u pre">$</span>${(dec?NF2:NF0).format(v||0)}`;
@@ -597,10 +604,11 @@ const Store={ok:false,mem:null,legacy:false,
       const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);
       const old=localStorage.getItem(KEY_V1);if(old){const o=JSON.parse(old);this.legacy=true;return o;}
       return null;
-    }catch(e){return this.mem;}}
-    return this.mem;
+    }catch(e){return this.mem?JSON.parse(this.mem):null;}}
+    return this.mem?JSON.parse(this.mem):null;
   },
-  save(d){this.mem=JSON.parse(JSON.stringify(d));if(this.ok){try{localStorage.setItem(KEY,JSON.stringify(d));}catch(e){this.ok=false;}}},
+  /* se serializa una sola vez (con 500 viajes son ~1.6 MB); la copia en memoria es ese mismo texto */
+  save(d){const j=JSON.stringify(d);this.mem=j;if(this.ok){try{localStorage.setItem(KEY,j);}catch(e){this.ok=false;}}},
   /* Borra la clave v1 solo cuando los datos migrados ya quedaron guardados en la v2 */
   retireLegacy(d){
     if(!this.legacy||!this.ok)return;
@@ -936,10 +944,12 @@ function placesMap(vis,pairs){
 /* Los mapas de ruta (Inicio, detalle del viaje, resumen) nacen como el SVG de siempre con atributos data-tmap;
    después de cada render, mountMaps() monta encima un mapa MapLibre. Si la librería, el estilo o los mosaicos
    no responden en 5 s, queda el SVG con el aviso "Mapa sin conexión". */
-const ML={base:'https://unpkg.com/maplibre-gl@5.7.0/dist/',style:'https://tiles.openfreemap.org/styles/dark',timeout:5000,
+const ML={base:'https://unpkg.com/maplibre-gl@5.7.0/dist/',style:'https://tiles.openfreemap.org/styles/dark',timeout:5000,firstTimeout:8000, /* el primer mapa (aún sin librería ni estilo) espera 8 s; los siguientes 5 s */
   jsSri:'sha384-Blts4zGbI8Hh/NvhcxTYsF2uLBbYIwHXEhPMxN3XpadJCDgstyLfJA3opgmkfBOc',
   cssSri:'sha384-gNYNsUmuZqDYiT3gbirWTV5K7rt71RoveS/yXAaU09d4ZUmeDVTD3XoqB6uJAIFR'};
 const MapLib={p:null,style:null,failedAt:0};
+/* Al destruir un mapa con mosaicos en vuelo, MapLibre registra un AbortError inofensivo: se omite para no ensuciar la consola */
+(()=>{const ce=console.error;console.error=function(e,...r){if(e&&e.name==='AbortError')return;return ce.call(console,e,...r);};})();
 const MapReg=[]; /* una entrada por contenedor de mapa vivo: {root,slot,tripId,key,mode,ph,host,map,state} */
 const mapsOffline=()=>MapLib.failedAt&&Date.now()-MapLib.failedAt<30000;
 function mapAssets(){
@@ -955,7 +965,7 @@ function mapAssets(){
     s.onload=()=>{if(done)return;if(window.maplibregl){done=true;res();}else bad();};s.onerror=bad;l.onerror=bad;
     document.head.append(l,s);
   });
-  const style=fetch(ML.style,typeof AbortSignal!=='undefined'&&AbortSignal.timeout?{signal:AbortSignal.timeout(ML.timeout)}:{})
+  const style=fetch(ML.style,typeof AbortSignal!=='undefined'&&AbortSignal.timeout?{signal:AbortSignal.timeout(ML.firstTimeout)}:{})
     .then(r=>{if(!r.ok)throw new Error('style');return r.json();})
     .then(j=>{const bg=j.layers.find(l=>l.type==='background');if(bg)bg.paint['background-color']='#0F0F12';MapLib.style=j;});
   const p=MapLib.p=Promise.all([lib,style]).then(()=>{MapLib.p=null;},e=>{MapLib.p=null;MapLib.failedAt=Date.now();throw e;});
@@ -1006,7 +1016,7 @@ function startMap(ph,root){
   m.host.className='tm-host';MapReg.push(m);
   if(mapsOffline()){m.state='failed';mapNote(ph);return;}
   ph.appendChild(m.host);
-  m.timer=setTimeout(()=>failMap(m),ML.timeout);
+  m.timer=setTimeout(()=>failMap(m),window.maplibregl&&MapLib.style?ML.timeout:ML.firstTimeout);
   mapAssets().then(()=>{if(!m.dead&&m.state==='pending')buildMap(m);},()=>failMap(m));
 }
 function speedColor(v){
@@ -1015,11 +1025,12 @@ function speedColor(v){
   for(let i=1;i<st.length;i++)if(v<=st[i][0]){const [a,ca]=st[i-1],[b,cb]=st[i],f=(v-a)/(b-a);return `rgb(${ca.map((c,k)=>Math.round(c+(cb[k]-c)*f))})`;}
   return `rgb(${st[st.length-1][1]})`;
 }
+const smoothSpeeds=pts=>pts.map((p,i)=>mean(pts.slice(Math.max(0,i-3),i+4).map(q=>q.speed)));
 /* line-gradient: color por velocidad (suavizada) en cada parada de line-progress = distancia acumulada / distancia total */
 function speedGradient(pts){
   const kx=111.32*Math.cos(pts[0].lat*Math.PI/180),n=pts.length,cum=[0];
   for(let i=1;i<n;i++)cum.push(cum[i-1]+Math.hypot((pts[i].lng-pts[i-1].lng)*kx,(pts[i].lat-pts[i-1].lat)*111.2));
-  const tot=cum[n-1],sp=pts.map((p,i)=>mean(pts.slice(Math.max(0,i-3),i+4).map(q=>q.speed)));
+  const tot=cum[n-1],sp=smoothSpeeds(pts);
   const stops=[];let last=-1;
   pts.forEach((p,i)=>{const f=i===0?0:i===n-1?1:cum[i]/(tot||1);if(f>last+1e-6){stops.push(f,speedColor(sp[i]));last=f;}});
   if(stops.length<4)return ['interpolate',['linear'],['line-progress'],0,ACC,1,ACC];
@@ -1033,8 +1044,7 @@ function revealMap(m){
 function buildMap(m){
   if(m.kind==='places')return buildPlacesMap(m);
   const pts=m.pts,reduce=matchMedia('(prefers-reduced-motion: reduce)').matches,live=m.mode==='interactive';
-  const lngs=pts.map(p=>p.lng),lats=pts.map(p=>p.lat);
-  const bounds=[[Math.min(...lngs),Math.min(...lats)],[Math.max(...lngs),Math.max(...lats)]];
+  const bounds=boundsOf(pts.map(llOf));
   const pad=Math.max(16,Math.min(46,Math.round((m.host.clientHeight||160)*.16)));
   const fit={padding:{top:pad+12,bottom:pad,left:pad+10,right:pad+10},maxZoom:16};
   let map;
@@ -1182,7 +1192,7 @@ function buildPlacesMap(m){
     map.addSource('pair-route',{type:'geojson',lineMetrics:true,data:EMPTY_FC});
     map.addLayer({id:'heat',type:'heatmap',source:'heat',layout:{visibility:'none'},paint:{
       'heatmap-weight':1,'heatmap-intensity':['interpolate',['linear'],['zoom'],8,.3,13,1],
-      'heatmap-radius':['interpolate',['linear'],['zoom'],8,7,12,16,15,34],
+      'heatmap-radius':['interpolate',['linear'],['zoom'],8,7,12,16,15,34], /* se reescalan en refreshPlaces según la cantidad de points */
       'heatmap-color':['interpolate',['linear'],['heatmap-density'],0,'rgba(255,176,32,0)',.2,'rgba(255,176,32,.22)',.5,'rgba(255,176,32,.7)',.8,'#FFB020',1,'#FFF1D6'],
       'heatmap-opacity':.9}},below);
     map.addLayer({id:'routes-base',type:'line',source:'routes',layout:{...cap,visibility:'none'},paint:{'line-color':ACC,'line-width':2.6,'line-opacity':.2}},below);
@@ -1214,7 +1224,13 @@ function refreshPlaces(m,first){
   if(pl)map.setPaintProperty('pair-line','line-gradient',speedGradient(pl));
   const vs=(id,on)=>map.setLayoutProperty(id,'visibility',on?'visible':'none');
   vs('heat',layer==='calor');vs('routes-base',layer==='rutas');vs('pairs-dash',layer==='lugares');vs('routes-sel',!!selP);vs('pair-halo',!!pl);vs('pair-line',!!pl);
-  map.setPaintProperty('routes-base','line-opacity',selP?.07:.2);map.setPaintProperty('routes-sel','line-opacity',selPair?.3:.85);map.setPaintProperty('pairs-dash','line-opacity',selP?.14:.28);map.setPaintProperty('heat','heatmap-opacity',selP?.4:.9);
+  /* la densidad crece con el historial: con muchos points se baja el peso y el radio, con pocos se sube; lo mismo con la opacidad de las rutas */
+  const np=withPts.reduce((n,t)=>n+t.points.length,0),nt=withPts.length||1,cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const hw=cl(Math.sqrt(500/(np||1)),.1,1.8),hr=cl(Math.sqrt(1200/(np||1)),.55,1.3),ro=cl(.8/Math.sqrt(nt),.03,.4);
+  const hk=hw+'|'+hr;
+  if(m.heatKey!==hk){m.heatKey=hk;map.setPaintProperty('heat','heatmap-weight',hw);map.setPaintProperty('heat','heatmap-radius',['interpolate',['linear'],['zoom'],8,7*hr,12,16*hr,15,34*hr]);}
+  map.setPaintProperty('routes-base','line-width',nt>150?2:2.6);
+  map.setPaintProperty('routes-base','line-opacity',selP?ro*.35:ro);map.setPaintProperty('routes-sel','line-opacity',selPair?.3:.85);map.setPaintProperty('pairs-dash','line-opacity',selP?.14:.28);map.setPaintProperty('heat','heatmap-opacity',selP?.4:.9);
   /* pines: se recrean (pocos) con tamaño según visitas y estado de selección */
   m.markers.forEach(k=>k.remove());m.markers=[];
   for(const p of S.places){
@@ -1603,7 +1619,7 @@ function renderAjustes(){
       <section class="card"><h3 class="sec-title">Atajos de teclado</h3>
         <div class="kbd-list"><div><span>Nuevo viaje</span><kbd>N</kbd></div><div><span>Nueva carga de gasolina</span><kbd>G</kbd></div><div><span>Editar el viaje seleccionado</span><kbd>E</kbd></div><div><span>Buscar</span><kbd>/</kbd></div><div><span>Cerrar panel o detalle</span><kbd>Esc</kbd></div><div><span>Guardar en un panel</span><span><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span></div><div><span>Moverse entre viajes</span><span><kbd>↑</kbd> <kbd>↓</kbd></span></div></div>
       </section>
-      <section class="card"><h3 class="sec-title">Acerca de Trayecto</h3><p class="muted-sm" style="margin-top:6px">Versión 1.0. Funciona 100% sin conexión y tus datos nunca salen de este equipo. Todas las funciones son gratuitas, sin anuncios ni suscripciones.</p></section>
+      <section class="card"><h3 class="sec-title">Acerca de Trayecto</h3><p class="muted-sm" style="margin-top:6px">Versión 2.0. Tus datos nunca salen de este equipo y la app funciona sin conexión: los mapas reales necesitan internet y, sin él, se usa un mapa esquemático. Todas las funciones son gratuitas, sin anuncios ni suscripciones.</p></section>
     </div>
   </div>`;
 }
@@ -2006,21 +2022,43 @@ function tripCanvas(t){
   const MX=760,MY=136,MW=364,MH=210;
   rr(x,MX,MY,MW,MH,18);x.fillStyle='#0F0F12';x.fill();x.save();rr(x,MX,MY,MW,MH,18);x.clip();
   x.strokeStyle='rgba(255,255,255,.045)';x.lineWidth=1;for(let i=MX+11;i<MX+MW;i+=22){x.beginPath();x.moveTo(i,MY);x.lineTo(i,MY+MH);x.stroke();}for(let j=MY+11;j<MY+MH;j+=22){x.beginPath();x.moveTo(MX,j);x.lineTo(MX+MW,j);x.stroke();}
-  const pts=routePts(t.origin,t.destination),xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
-  const bw=Math.max(40,Math.max(...xs)-Math.min(...xs)),bh=Math.max(40,Math.max(...ys)-Math.min(...ys));
-  const sc=Math.min((MW-90)/bw,(MH-80)/bh),ox=MX+MW/2-(Math.min(...xs)+bw/2)*sc,oy=MY+MH/2-(Math.min(...ys)+bh/2)*sc;
-  const tp=pts.map(p=>({x:p.x*sc+ox,y:p.y*sc+oy}));
+  const real=Array.isArray(t.points)&&t.points.length>=2;
+  let tp,cols=null;
+  if(real){
+    /* ruta real: lat/lng a km (con la corrección por latitud), encuadrada en el recuadro sin deformarla */
+    const kx=111.32*Math.cos(t.points[0].lat*Math.PI/180),q=t.points.map(p=>({x:p.lng*kx,y:-p.lat*111.2}));
+    const x0=Math.min(...q.map(p=>p.x)),x1=Math.max(...q.map(p=>p.x)),y0=Math.min(...q.map(p=>p.y)),y1=Math.max(...q.map(p=>p.y));
+    const bw=Math.max(.2,x1-x0),bh=Math.max(.2,y1-y0),sc=Math.min((MW-90)/bw,(MH-80)/bh);
+    tp=q.map(p=>({x:MX+MW/2+(p.x-(x0+x1)/2)*sc,y:MY+MH/2+(p.y-(y0+y1)/2)*sc}));
+    cols=smoothSpeeds(t.points).map(speedColor);
+  }else{
+    const pts=routePts(t.origin,t.destination),xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+    const bw=Math.max(40,Math.max(...xs)-Math.min(...xs)),bh=Math.max(40,Math.max(...ys)-Math.min(...ys));
+    const sc=Math.min((MW-90)/bw,(MH-80)/bh),ox=MX+MW/2-(Math.min(...xs)+bw/2)*sc,oy=MY+MH/2-(Math.min(...ys)+bh/2)*sc;
+    tp=pts.map(p=>({x:p.x*sc+ox,y:p.y*sc+oy}));
+  }
   const line=(w,col)=>{x.strokeStyle=col;x.lineWidth=w;x.lineJoin='round';x.lineCap='round';x.beginPath();tp.forEach((p,i)=>i?x.lineTo(p.x,p.y):x.moveTo(p.x,p.y));x.stroke();};
-  line(14,'rgba(255,176,32,.18)');line(4.5,ACC);
+  line(14,'rgba(255,176,32,.18)');
+  if(cols){ /* degradado de velocidad: cada tramo va del color de un punto al del siguiente */
+    x.lineWidth=4.5;x.lineCap='round';
+    for(let i=1;i<tp.length;i++){const g=x.createLinearGradient(tp[i-1].x,tp[i-1].y,tp[i].x,tp[i].y);g.addColorStop(0,cols[i-1]);g.addColorStop(1,cols[i]);x.strokeStyle=g;x.beginPath();x.moveTo(tp[i-1].x,tp[i-1].y);x.lineTo(tp[i].x,tp[i].y);x.stroke();}
+  }else line(4.5,ACC);
   const a=tp[0],b=tp[tp.length-1];
   x.fillStyle='#0F0F12';x.strokeStyle='#EDEDF0';x.lineWidth=3;x.beginPath();x.arc(a.x,a.y,7,0,Math.PI*2);x.fill();x.stroke();
   x.fillStyle='rgba(255,176,32,.25)';x.beginPath();x.arc(b.x,b.y,15,0,Math.PI*2);x.fill();x.fillStyle=ACC;x.beginPath();x.arc(b.x,b.y,8,0,Math.PI*2);x.fill();
   x.restore();
+  if(real){
+    const ly=MY+MH+19,lg=x.createLinearGradient(MX+20,0,MX+78,0);lg.addColorStop(0,speedColor(0));lg.addColorStop(.5,speedColor(20));lg.addColorStop(1,speedColor(40));
+    x.font=`600 13px ${F}`;x.fillStyle='#8A8A96';x.textAlign='left';x.fillText('0',MX,ly);
+    rr(x,MX+20,ly-3,58,6,3);x.fillStyle=lg;x.fill();
+    x.fillStyle='#8A8A96';x.fillText('40+ km/h',MX+86,ly);
+    x.textAlign='right';x.fillText(`Vel. máx. ${NF0.format(Math.max(...t.points.map(p=>p.speed)))} km/h`,MX+MW,ly);x.textAlign='left';
+  }
   x.strokeStyle='rgba(255,255,255,.08)';x.lineWidth=2;x.beginPath();x.moveTo(76,384);x.lineTo(W-76,384);x.stroke();
   const dur=tripDur(t),stats=[['DISTANCIA',fmtKm(tripKm(t)),'km'],['DURACIÓN',dur<60?String(dur):`${Math.floor(dur/60)}:${pad(dur%60)}`,dur<60?'min':'h'],['VEL. PROMEDIO',NF0.format(tripSpeed(t)),'km/h'],['COSTO EST.','$'+NF2.format(tripCost(t)),'MXN']];
   const colW=(W-152)/4;
-  stats.forEach(([l,v,u],i)=>{const sx=76+colW*i;x.fillStyle='#6E6E7A';x.font=`650 15px ${F}`;x.fillText(l,sx,428);x.fillStyle=i===3?ACC:'#EDEDF0';x.font=`700 58px ${F}`;x.fillText(v,sx,490);const vw=x.measureText(v).width;x.fillStyle='#A6A6B0';x.font=`500 22px ${F}`;x.fillText(u,sx+vw+8,498);});
-  x.fillStyle='#4A4A55';x.font=`500 16px ${F}`;x.fillText('Registrado sin conexión con Trayecto',76,556);
+  stats.forEach(([l,v,u],i)=>{const sx=76+colW*i;x.fillStyle='#8B8B97';x.font=`650 15px ${F}`;x.fillText(l,sx,428);x.fillStyle=i===3?ACC:'#EDEDF0';x.font=`700 58px ${F}`;x.fillText(v,sx,490);const vw=x.measureText(v).width;x.fillStyle='#A6A6B0';x.font=`500 22px ${F}`;x.fillText(u,sx+vw+8,498);});
+  x.fillStyle='#6E6E7A';x.font=`500 16px ${F}`;x.fillText('Registrado sin conexión con Trayecto',76,556);
   return c;
 }
 function downloadTripPNG(t){
@@ -2055,7 +2093,7 @@ function toast(msg,kind='ok'){
 }
 
 /* ================= Respaldo ================= */
-const csvCell=v=>{const s=v==null?'':String(v);return /[",\n;]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
+const csvCell=v=>{let s=v==null?'':String(v);if(typeof v==='string'&&/^[=+\-@\t\r]/.test(s))s="'"+s; /* evita que Excel interprete texto como fórmula */return /[",\n;]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;};
 const toCSV=rows=>'\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
 function exportJSON(){
   const payload={app:'Trayecto',version:DATA_VERSION,exportedAt:new Date().toISOString(),data:{vehicles:S.vehicles,places:S.places,trips:S.trips,fuel:S.fuel,settings:{...S.settings,lastBackup:null}}};
@@ -2218,7 +2256,7 @@ document.addEventListener('keydown',e=>{
 
 /* ================= Inicio ================= */
 buildChrome();applyChrome();render(true);
-window.__trayecto={get state(){return S;},get maps(){return MapReg.map(m=>({slot:m.slot,trip:m.tripId,state:m.state}));},get play(){return Play;},get loc(){return Loc;},render,go,openTripPanel,openFuelPanel};
+window.__trayecto={get state(){return S;},get maps(){return MapReg.map(m=>({slot:m.slot,trip:m.tripId,state:m.state}));},get play(){return Play;},get mapObjs(){return MapReg.map(m=>m.map);},get loc(){return Loc;},render,go,openTripPanel,openFuelPanel};
 })();
 </script>
 </body>
