@@ -1,0 +1,30 @@
+.comp-row {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  gap: 10px;
+}
+.comp-acc {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.comp-acc b {
+  font-weight: 650;
+  color: var(--accent);
+}
+.comp-acc small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.acc-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+.acc-list .comp-acc {
+  margin-top: 0;
+}

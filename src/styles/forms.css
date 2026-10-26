@@ -1,0 +1,221 @@
+/* ---------- Forms ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.field > label,
+.field .lbl {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.input {
+  height: 40px;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 0 12px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.input:hover {
+  border-color: var(--border-strong);
+}
+.input:focus,
+.input:focus-visible {
+  outline: none;
+  border-color: rgba(255, 176, 32, 0.6);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.input.sm {
+  height: 34px;
+  font-size: 13px;
+}
+.input.invalid {
+  border-color: rgba(255, 107, 107, 0.7);
+}
+.input[readonly] {
+  color: var(--text-2);
+}
+select.input {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238A8A96' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+}
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+.input-unit {
+  position: relative;
+}
+.input-unit .input {
+  padding-right: 42px;
+}
+.input-unit span {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+.input-unit.pre .input {
+  padding-left: 24px;
+  padding-right: 12px;
+}
+.input-unit.pre span {
+  left: 12px;
+  right: auto;
+}
+.row {
+  display: grid;
+  gap: 12px;
+}
+.row-2 {
+  grid-template-columns: 1fr 1fr;
+}
+.row-3 {
+  grid-template-columns: 1.25fr 1fr 1fr;
+}
+.err {
+  color: var(--red);
+  font-size: 12px;
+  min-height: 0;
+}
+.err:empty {
+  display: none;
+}
+.help {
+  font-size: 12px;
+  color: var(--muted);
+}
+.combo {
+  position: relative;
+}
+.combo-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+  max-height: 250px;
+  overflow: auto;
+  z-index: 10;
+  animation: pop 0.14s var(--ease);
+}
+.combo-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+.combo-opt svg {
+  color: var(--muted);
+  flex: none;
+}
+.combo-opt small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.combo-opt:hover,
+.combo-opt[aria-selected='true'] {
+  background: var(--accent-soft);
+}
+.combo-opt[aria-selected='true'] svg {
+  color: var(--accent);
+}
+.combo-note {
+  padding: 9px 10px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 16px;
+}
+.switch b {
+  display: block;
+  font-weight: 600;
+}
+.switch small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.track {
+  display: block;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: #34343c;
+  position: relative;
+  transition: background 0.2s;
+  flex: none;
+}
+.track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.22s var(--ease);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+[aria-checked='true'] .track {
+  background: var(--accent);
+}
+[aria-checked='true'] .track::after {
+  transform: translateX(16px);
+}
+.switch-bare {
+  display: inline-flex;
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 999px;
+}
+.switch-bare:hover .track {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05);
+}

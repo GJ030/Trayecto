@@ -1,0 +1,29 @@
+@media (max-width: 1360px) {
+  .fs-notice {
+    margin: 0 24px 12px;
+  }
+  .content {
+    padding: 6px 24px 40px;
+  }
+  .topbar {
+    padding: 0 24px;
+  }
+  .search {
+    width: 280px;
+  }
+  .stat-val.xl {
+    font-size: 36px;
+  }
+  .toolbar-count {
+    display: none;
+  }
+  #fVeh {
+    width: 170px !important;
+  }
+  .date-range .input {
+    width: 136px;
+  }
+  .split.has-detail {
+    grid-template-columns: minmax(0, 1fr) 330px;
+  }
+}

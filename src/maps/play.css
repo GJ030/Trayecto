@@ -1,0 +1,78 @@
+/* Reproducción de ruta */
+.play-bar {
+  margin-top: 10px;
+}
+.detail:has(.map-note) .play-bar {
+  display: none;
+}
+.play-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.play-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.play-btn:hover {
+  background: #ffbe48;
+}
+.play-btn svg {
+  fill: currentColor;
+  stroke: none;
+}
+.play-range {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.play-bar .seg button {
+  padding: 0 9px;
+  height: 28px;
+}
+.play-info {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.map-legend {
+  display: flex;
+  gap: 18px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.map-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.lg-pin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: #1c1c21;
+}
+.lg-line {
+  width: 18px;
+  border-top: 2px dashed rgba(255, 255, 255, 0.3);
+}
+.lg-route {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}

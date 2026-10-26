@@ -1,0 +1,217 @@
+/* ---------- Drawer ---------- */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+  z-index: 50;
+}
+.backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 470px;
+  max-width: 100vw;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  transform: translateX(102%);
+  transition: transform 0.34s var(--ease);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -30px 0 70px rgba(0, 0, 0, 0.55);
+}
+.drawer.open {
+  transform: none;
+}
+.drawer-head {
+  padding: 20px 24px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-head .dh-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: none;
+}
+.drawer-head .dh-ico.ok {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.drawer-head h2 {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.drawer-head .close-wrap {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 24px 8px;
+}
+.drawer-foot {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.foot-hint {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.route-box {
+  display: grid;
+  grid-template-columns: 1fr 34px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.swap-btn {
+  margin-top: 25px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.calc {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+}
+.calc.two {
+  grid-template-columns: 1fr 1fr;
+}
+.calc > div {
+  background: var(--surface-2);
+  padding: 14px 16px;
+}
+.calc small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.calc b {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  transition: color 0.2s;
+}
+.calc b .u {
+  font-size: 12px;
+  color: var(--text-2);
+  font-weight: 500;
+  margin-left: 3px;
+}
+.calc b.empty-v {
+  color: #4a4a55;
+}
+.calc-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 4px 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.calc-foot b {
+  color: var(--accent);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.total-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(255, 176, 32, 0.22);
+  margin-bottom: 16px;
+}
+.total-box span {
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 13px;
+}
+.total-box b {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+.summary {
+  background: linear-gradient(160deg, #1d1a14 0%, #16161a 45%);
+  border: 1px solid rgba(255, 176, 32, 0.2);
+  border-radius: 18px;
+  padding: 20px;
+}
+.sum-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-weight: 700;
+}
+.sum-top .logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.sum-top span.muted-sm {
+  margin-left: auto;
+  font-weight: 500;
+}
+.sum-route {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sum-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 12px;
+  margin-top: 16px;
+}
+.sum-foot {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+}

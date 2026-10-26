@@ -1,0 +1,39 @@
+/* ---------- Empty ---------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 52px 24px;
+  gap: 8px;
+  color: var(--text-2);
+}
+.empty .e-ico {
+  width: 58px;
+  height: 58px;
+  border-radius: 17px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+}
+.empty h3 {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+}
+.empty p {
+  max-width: 380px;
+  font-size: 13px;
+}
+.e-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.empty.sm {
+  padding: 28px 16px;
+}

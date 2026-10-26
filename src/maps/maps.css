@@ -1,0 +1,198 @@
+/* ---------- Maps & charts ---------- */
+.map {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0f0f12;
+}
+.map svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.map-lbl text {
+  fill: #4a4a55;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.pin-lbl {
+  fill: #ededf0;
+  font-weight: 600;
+}
+.pin-lbl.muted {
+  fill: #8a8a96;
+  font-weight: 500;
+}
+.pin {
+  cursor: pointer;
+}
+.pin:hover .pin-dot {
+  stroke-width: 3.5;
+}
+.pin:focus-visible .pin-dot {
+  stroke: #fff;
+}
+.route-path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1.1s var(--ease) 0.08s forwards;
+}
+.pin-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse 2.2s ease-out infinite;
+}
+/* MapLibre: se monta sobre el SVG de la ruta, que queda debajo como respaldo */
+.map[data-tmap],
+.map[data-pmap] {
+  position: relative;
+}
+.tm-host {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.tm-host.on {
+  opacity: 1;
+}
+.map .tm-host.maplibregl-map {
+  position: absolute;
+  inset: 0;
+  font:
+    600 11px/1.2 'Inter',
+    'Segoe UI Variable Text',
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+  background: #0f0f12;
+}
+.map-note {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(15, 15, 18, 0.78);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.tm-pin {
+  position: relative;
+  box-sizing: border-box;
+  border-radius: 50%;
+}
+.tm-start {
+  width: 12px;
+  height: 12px;
+  background: #0f0f12;
+  border: 2.4px solid #ededf0;
+}
+.tm-end {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: 2.4px solid #0f0f12;
+}
+.tm-pulse {
+  position: absolute;
+  inset: -2.4px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  animation: pulse 2.2s ease-out infinite;
+  pointer-events: none;
+}
+.tm-lbl {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  color: #ededf0;
+  text-shadow:
+    0 0 3px #0f0f12,
+    0 0 3px #0f0f12,
+    0 0 7px #0f0f12;
+  pointer-events: none;
+}
+.tm-legend {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(15, 15, 18, 0.78);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.tm-legend i {
+  width: 54px;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #ff6b6b, #ffb020, #3ddc97);
+}
+.map .maplibregl-ctrl-group {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: none;
+  overflow: hidden;
+}
+.map .maplibregl-ctrl-group button {
+  width: 30px;
+  height: 30px;
+  background-color: transparent;
+}
+.map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--border);
+}
+.map .maplibregl-ctrl-group button:hover {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+.map .maplibregl-ctrl-group button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+.map .maplibregl-ctrl-icon {
+  filter: invert(1);
+  opacity: 0.85;
+}
+.map .maplibregl-ctrl.maplibregl-ctrl-attrib,
+.map .maplibregl-ctrl-attrib.maplibregl-compact {
+  background-color: rgba(15, 15, 18, 0.78);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.map .maplibregl-ctrl-attrib.maplibregl-compact {
+  margin: 6px;
+  border-radius: 12px;
+}
+.map .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  background-color: rgba(15, 15, 18, 0.96);
+}
+.map .maplibregl-ctrl-attrib a {
+  color: var(--text-2);
+}
+.map .maplibregl-ctrl-attrib-button,
+.map .maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+  background-color: transparent;
+}

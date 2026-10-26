@@ -16,8 +16,8 @@ export default tseslint.config(
     },
   },
   {
-    // Código heredado de la fase 1; se divide en módulos en la fase 2.
-    files: ['src/main.js'],
+    // Módulos JavaScript de la fase 2; se convierten a TypeScript en la fase 3.
+    files: ['src/**/*.js'],
     languageOptions: { globals: { maplibregl: 'readonly' } },
     rules: {
       '@typescript-eslint/no-unused-expressions': 'off',

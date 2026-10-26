@@ -1,0 +1,82 @@
+.merge-sum {
+  min-height: 40px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.pl-li {
+  position: relative;
+}
+.pl-li .row-btn {
+  padding-right: 48px;
+}
+.p-more {
+  position: absolute;
+  right: 8px;
+  top: 10px;
+  width: 34px;
+  height: 34px;
+}
+.pmenu {
+  top: calc(100% - 8px);
+  left: auto;
+  right: 8px;
+  width: 210px;
+}
+.pmenu.up {
+  top: auto;
+  bottom: calc(100% - 8px);
+}
+.menu-item.danger {
+  color: var(--red);
+}
+.menu-item.danger .mi-ico {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.kind-pick {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.kind-pick label {
+  position: relative;
+  display: flex;
+}
+.kind-pick input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.kind-pick span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.kind-pick small {
+  font-size: 12px;
+  font-weight: 560;
+}
+.kind-pick span:hover {
+  color: var(--text);
+}
+.kind-pick input:checked + span {
+  background: var(--accent-soft);
+  border-color: rgba(255, 176, 32, 0.5);
+  color: var(--accent);
+}
+.kind-pick input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

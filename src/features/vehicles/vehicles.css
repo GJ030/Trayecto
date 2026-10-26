@@ -1,0 +1,61 @@
+.tag-rows > div {
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 14px;
+}
+.veh-card .vc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.vc-sw {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.vc-head h3 {
+  font-size: 17px;
+  font-weight: 650;
+}
+.vc-head p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.vc-head .vc-right {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.vc-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 18px;
+}
+.vc-stats > div {
+  background: var(--surface-2);
+  padding: 12px 14px;
+}
+.vc-stats b {
+  display: block;
+  font-size: 18px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.vc-stats small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}

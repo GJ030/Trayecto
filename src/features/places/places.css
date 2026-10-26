@@ -1,0 +1,138 @@
+/* ---------- Lugares ---------- */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.row-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.row-btn:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+.row-btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: rgba(255, 176, 32, 0.28);
+}
+.p-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-2);
+  flex: none;
+}
+.row-btn[aria-pressed='true'] .p-ico {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.p-main {
+  flex: 1;
+  min-width: 0;
+}
+.p-main b {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.p-main small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.p-bar {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  margin-top: 7px;
+  overflow: hidden;
+}
+.p-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+}
+.p-val {
+  text-align: right;
+  flex: none;
+}
+.p-val b {
+  font-size: 18px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  display: block;
+  line-height: 1.1;
+}
+.p-val small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.add-place summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  margin-top: 10px;
+  padding: 4px 2px;
+  border-radius: 6px;
+}
+.add-place summary::-webkit-details-marker {
+  display: none;
+}
+.add-place form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.filter-chip button {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 0;
+  background: none;
+  color: inherit;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.filter-chip button:hover {
+  background: rgba(255, 176, 32, 0.2);
+}

@@ -1,0 +1,33 @@
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.bar {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: grow 0.6s var(--ease) both;
+}
+.bar-val {
+  font-size: 11px;
+  fill: #8a8a96;
+  font-variant-numeric: tabular-nums;
+}
+.bar-val.hl {
+  fill: #ffb020;
+  font-weight: 650;
+}
+.bar-lbl {
+  font-size: 11px;
+  fill: #8b8b97;
+}
+.bar-lbl.hl {
+  fill: #ededf0;
+  font-weight: 600;
+}
+.avg-lbl {
+  font-size: 11px;
+  fill: #3ddc97;
+  font-weight: 600;
+}
