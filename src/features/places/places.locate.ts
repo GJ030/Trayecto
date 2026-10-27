@@ -12,7 +12,7 @@ export function startLocate(id: string) {
     m = MapReg.find((x) => x.kind === 'places');
   if (!p) return;
   if (!m || m.state === 'failed') {
-    toast('El mapa no está disponible sin conexión', 'err');
+    toast('El mapa no está disponible. Pulsa «Reintentar» sobre el mapa.', 'err');
     return;
   }
   const has = validGeo(p.lat, p.lng);

@@ -85,6 +85,16 @@
   font-weight: 600;
   pointer-events: none;
 }
+.map-retry {
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: inherit;
+}
+.map-retry:hover,
+.map-retry:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+}
 .tm-pin {
   position: relative;
   box-sizing: border-box;

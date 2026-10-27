@@ -8,6 +8,17 @@ export interface ToastOptions {
   action?: { label: string; fn: () => void };
 }
 export function toast(msg: string, kind: 'ok' | 'err' = 'ok', opt?: ToastOptions) {
+  /* un aviso idéntico que aún se ve no se repite (p. ej. pulsar varias veces una acción que no puede hacerse) */
+  if (!opt?.action) {
+    const same = [...req('#toasts').children].find(
+      (t) =>
+        t.classList.contains(kind) &&
+        !t.classList.contains('out') &&
+        !t.querySelector('.toast-act') &&
+        t.querySelector('span')?.textContent === msg,
+    );
+    if (same) return same as HTMLElement;
+  }
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
   el.innerHTML = `${icon(kind === 'ok' ? 'check' : 'alert', 16)}<span>${esc(msg)}</span>`;

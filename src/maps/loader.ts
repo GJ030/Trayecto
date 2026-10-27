@@ -8,7 +8,7 @@ export const ML = {
   base: 'https://unpkg.com/maplibre-gl@5.7.0/dist/',
   style: 'https://tiles.openfreemap.org/styles/dark',
   timeout: 5000,
-  firstTimeout: 8000 /* el primer mapa (aún sin librería ni estilo) espera 8 s; los siguientes 5 s */,
+  firstTimeout: 15000 /* el primer mapa (aún sin librería ni estilo) espera 15 s; los siguientes 5 s */,
   jsSri: 'sha384-Blts4zGbI8Hh/NvhcxTYsF2uLBbYIwHXEhPMxN3XpadJCDgstyLfJA3opgmkfBOc',
   cssSri: 'sha384-gNYNsUmuZqDYiT3gbirWTV5K7rt71RoveS/yXAaU09d4ZUmeDVTD3XoqB6uJAIFR',
 };

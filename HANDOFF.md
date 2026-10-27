@@ -40,6 +40,10 @@ Para que el `localStorage` y `trayecto-datos.json` no crezcan, `stringifyData` (
 
 El formulario de viaje tiene un interruptor para capturar el odómetro final o la distancia que marca la computadora; el otro valor se calcula. Se recuerda en `settings.odoMode`. Detalle en `CLAUDE.md`; pruebas en `trips.calc.test.ts`, `trips.repo.test.ts` y `tests/e2e/odometer.spec.ts`.
 
+### Cambio posterior: el mapa se recupera de un fallo pasajero
+
+Un mapa que fallaba (p. ej. el primero tardó más del plazo) se quedaba en «Mapa sin conexión» hasta recargar. Ahora el aviso es un botón **Reintentar**, hay reintento automático con el evento `online`, el primer mapa espera 15 s en vez de 8 y los avisos idénticos no se apilan. Pruebas: `tests/e2e/maps.spec.ts`.
+
 ## Entorno
 
 - Node 22, Vite 8 (Rolldown), TypeScript 6, Vitest 5, ESLint 10, Playwright 1.64. Comandos y definición de terminado: ver `CLAUDE.md`.

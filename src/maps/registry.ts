@@ -102,8 +102,29 @@ export function mountMaps(root: HTMLElement) {
 }
 function mapNote(ph: HTMLElement) {
   if (!ph.querySelector('.map-note'))
-    ph.insertAdjacentHTML('beforeend', '<span class="map-note">Mapa sin conexión</span>');
+    ph.insertAdjacentHTML(
+      'beforeend',
+      '<button type="button" class="map-note map-retry" data-map-retry>Mapa sin conexión · Reintentar</button>',
+    );
 }
+/* Vuelve a pedir los mapas que fallaron (un fallo pasajero no debe dejar la pantalla sin mapa hasta recargar):
+   olvida el periodo de espera, descarta las entradas fallidas y monta de nuevo en sus contenedores */
+export function retryMaps() {
+  const failed = MapReg.filter((m) => m.state === 'failed');
+  MapLib.failedAt = 0;
+  if (!failed.length) return;
+  const roots = new Set(failed.map((m) => m.root));
+  failed.forEach(destroyMap);
+  roots.forEach((root) => {
+    $$('.map-note', root).forEach((n) => n.remove());
+    parkMaps(root);
+    mountMaps(root);
+  });
+}
+document.addEventListener('click', (e) => {
+  if ((e.target as Element | null)?.closest?.('[data-map-retry]')) retryMaps();
+});
+window.addEventListener('online', retryMaps);
 export function failMap(m: MapEntry) {
   if (m.dead || m.state !== 'pending') return;
   m.state = 'failed';
