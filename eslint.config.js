@@ -27,14 +27,7 @@ const layer = (files, banned, message, regex) => ({
 
 export default tseslint.config(
   {
-    ignores: [
-      'tools',
-      'dist',
-      'node_modules',
-      'test-results',
-      'playwright-report',
-      'trayecto.html',
-    ],
+    ignores: ['tools', 'dist', 'node_modules', 'test-results', 'playwright-report'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
