@@ -2,6 +2,14 @@
 
 Documento para continuar el trabajo en otra sesión. Léelo completo antes de tocar nada.
 
+## Aviso: historial reescrito y datos de ejemplo ficticios
+
+Las coordenadas de los lugares de ejemplo (`SEED_GEO`) eran ubicaciones reales; antes de publicar el repo se sustituyeron por ficticias en **todo** el historial (por eso los hashes de este documento son los nuevos). Consecuencias:
+
+- Los lugares de ejemplo y las rutas generadas del demo cambian respecto a versiones anteriores. Los datos que ya guardó el usuario (`localStorage`, `trayecto-datos.json`) no se tocan: sus lat/lng viven en sus datos, no en el código.
+- `tools/parity/baseline.html` y los `*.json` locales se generaron con las coordenadas viejas: regenerar con `git show 40db8c5:trayecto.html > tools/parity/baseline.html` y volver a correr el guion antes de comparar.
+- No volver a escribir coordenadas, placas ni direcciones reales en el código, las pruebas ni la documentación.
+
 ## Encargo original (resumen)
 
 Migrar `trayecto.html` (un solo archivo de ~2 900 líneas) a un proyecto mantenible **sin cambiar comportamiento, apariencia ni datos**:
@@ -16,16 +24,16 @@ Migrar `trayecto.html` (un solo archivo de ~2 900 líneas) a un proyecto manteni
 
 | Fase                                                         | Estado                                                | Commit    |
 | ------------------------------------------------------------ | ----------------------------------------------------- | --------- |
-| 1 Andamiaje                                                  | hecha                                                 | `ca927e2` |
-| 2 Módulos ES                                                 | hecha                                                 | `3b325c9` |
-| 3 TypeScript estricto                                        | hecha                                                 | `7b9c9cb` |
-| 4 Repos, eventos, dependencias                               | **hecha**                                             | `f08d60d` |
+| 1 Andamiaje                                                  | hecha                                                 | `dd46655` |
+| 2 Módulos ES                                                 | hecha                                                 | `1a79878` |
+| 3 TypeScript estricto                                        | hecha                                                 | `247e233` |
+| 4 Repos, eventos, dependencias                               | **hecha**                                             | `2a96ecc` |
 | 5 Pruebas unitarias                                          | **pendiente**                                         | –         |
 | 6 Pruebas E2E                                                | **pendiente** (solo existe `tests/e2e/smoke.spec.ts`) | –         |
 | Cierre: `CLAUDE.md` nuevo, borrar `trayecto.html` de la raíz | **pendiente**                                         | –         |
 
 Repo git local en esta carpeta, rama `main`, sin remoto. Los mensajes de commit **no llevan** trailer de coautoría ni atribución a Claude.
-Línea base original: commit `d88497a` (`git show d88497a:trayecto.html`). `trayecto.html` sigue en la raíz hasta el cierre; ESLint y Prettier lo ignoran.
+Línea base original: commit `40db8c5` (`git show 40db8c5:trayecto.html`). `trayecto.html` sigue en la raíz hasta el cierre; ESLint y Prettier lo ignoran.
 
 ## Comandos y entorno
 
@@ -102,7 +110,7 @@ Desacoplamientos puntuales: `drawerHooks.park/mount` (el panel no importa `maps`
 Guion de 67 pasos con tiempo congelado, `Math.random` con semilla, CDN bloqueada, animaciones reducidas. Compara DOM, estado, localStorage, JSON/CSV exportados y una firma de estilos calculados.
 
 ```bash
-git show d88497a:trayecto.html > tools/parity/baseline.html      # ya existe, está en .gitignore
+git show 40db8c5:trayecto.html > tools/parity/baseline.html      # ya existe, está en .gitignore
 node tools/parity/run.mjs tools/parity/baseline.html tools/parity/base.json
 npm run build
 node tools/parity/run.mjs dist/trayecto.html tools/parity/new.json

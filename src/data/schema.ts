@@ -156,7 +156,7 @@ interface SeedGeo {
   x: number;
   y: number;
 }
-/* Coordenadas reales (CDMX) de los lugares de ejemplo, por nombre normalizado. x/y = posición que tenían en el mapa SVG de la v1: solo sirven para reconocerlos al migrar */
+/* Coordenadas ficticias (zona de CDMX) de los lugares de ejemplo, por nombre normalizado. x/y = posición que tenían en el mapa SVG de la v1: solo sirven para reconocerlos al migrar */
 export const SEED_GEO: Record<string, SeedGeo> = {
   casa: { lat: 19.32, lng: -99.11, x: 500, y: 430 },
   oficina: { lat: 19.4, lng: -99.14, x: 300, y: 175 },
