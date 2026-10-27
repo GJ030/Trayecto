@@ -48,11 +48,19 @@ export async function drawerClosed(page: Page) {
   await expect(page.locator('#drawer')).not.toHaveClass(/open/);
   await expect(page.locator('#drawer')).toHaveAttribute('inert', '');
 }
-/** Abre un panel con su atajo de teclado y espera a que el formulario esté listo. */
-export async function openPanel(page: Page, key: 'n' | 'g', form: string) {
-  await page.keyboard.press(key);
+/**
+ * Espera a que un panel recién abierto esté listo: visible y con el foco en su primer campo. El panel enfoca
+ * ese campo en un requestAnimationFrame; si se rellena antes, el foco tardío le roba el texto al campo.
+ */
+export async function panelReady(page: Page, form: string, focus: string) {
   await expect(page.locator('#drawer')).toHaveClass(/open/);
   await expect(page.locator(form)).toBeVisible();
+  await expect(page.locator(focus)).toBeFocused();
+}
+/** Abre un panel de alta con su atajo de teclado y espera a que esté listo. */
+export async function openPanel(page: Page, key: 'n' | 'g', form: string, focus: string) {
+  await page.keyboard.press(key);
+  await panelReady(page, form, focus);
 }
 /** Confirma el diálogo modal abierto (botón principal). */
 export const confirmModal = (page: Page) => page.click('[data-m="1"]');

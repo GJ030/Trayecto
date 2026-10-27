@@ -1,6 +1,16 @@
-import { confirmModal, drawerClosed, expect, getState, goTo, openPanel, test } from './fixtures';
+import {
+  confirmModal,
+  drawerClosed,
+  expect,
+  getState,
+  goTo,
+  openPanel,
+  panelReady,
+  test,
+} from './fixtures';
 
-const openFuel = (page: Parameters<typeof openPanel>[0]) => openPanel(page, 'g', '#fuelForm');
+const openFuel = (page: Parameters<typeof openPanel>[0]) =>
+  openPanel(page, 'g', '#fuelForm', '#fStation');
 
 test.beforeEach(async ({ app }) => {
   await goTo(app, 'gasolina', 'Gasolina');
@@ -53,6 +63,7 @@ test('editar una carga con el lápiz', async ({ app }) => {
   const created = (await getState(app)).fuel.find((f) => f.odometer === 50005)!;
 
   await app.click(`[data-action=edit-fuel][data-id="${created.id}"]`);
+  await panelReady(app, '#fuelForm', '#fDate');
   await expect(app.locator('#fLit')).toHaveValue('30');
   await app.fill('#fLit', '31.2');
   await app.click('button[form=fuelForm]');

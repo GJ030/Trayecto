@@ -7,6 +7,7 @@ import {
   getStored,
   goTo,
   openPanel,
+  panelReady,
   test,
 } from './fixtures';
 
@@ -22,7 +23,7 @@ interface TripForm {
   unit?: 'kmpl' | 'l100';
 }
 async function openNewTrip(page: Page) {
-  await openPanel(page, 'n', '#tripForm');
+  await openPanel(page, 'n', '#tripForm', '#tOrigin');
 }
 async function fillTrip(page: Page, f: TripForm) {
   await page.fill('#tOrigin', f.origin);
@@ -135,7 +136,7 @@ test('editar un viaje con la tecla E conserva el id y regenera la ruta automáti
   await expect(app.locator(`#row-${created.id}`)).toHaveAttribute('aria-selected', 'true');
 
   await app.keyboard.press('e');
-  await expect(app.locator('#tripForm')).toBeVisible();
+  await panelReady(app, '#tripForm', '#tDate');
   await expect(app.locator('#tArr')).toHaveValue('08:05');
   await app.fill('#tArr', '08:20');
   await app.fill('#tComp', '14.5');

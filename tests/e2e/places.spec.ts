@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { confirmModal, drawerClosed, expect, getState, goTo, test } from './fixtures';
+import { confirmModal, drawerClosed, expect, getState, goTo, panelReady, test } from './fixtures';
 
 test.beforeEach(async ({ app }) => {
   await goTo(app, 'lugares', 'Lugares');
@@ -39,6 +39,7 @@ test('renombrar un lugar reescribe sus viajes y no toca las rutas', async ({ app
   expect(used.length).toBeGreaterThan(0);
 
   await openMenu(app, gym.id, 'place-edit');
+  await panelReady(app, '#placeForm', '#pName');
   await app.fill('#pName', 'Gym Central');
   await app.click('button[form=placeForm]');
   await drawerClosed(app);

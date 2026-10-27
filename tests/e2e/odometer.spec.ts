@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
-import { drawerClosed, expect, getState, goTo, openPanel, test } from './fixtures';
+import { drawerClosed, expect, getState, goTo, openPanel, panelReady, test } from './fixtures';
 
-const openTrip = (page: Page) => openPanel(page, 'n', '#tripForm');
+const openTrip = (page: Page) => openPanel(page, 'n', '#tripForm', '#tOrigin');
 const pick = (page: Page, mode: 'end' | 'dist') =>
   page.click(`#tripForm .seg label:has(input[value=${mode}])`);
 async function fillBasics(page: Page) {
@@ -121,7 +121,7 @@ test('al editar un viaje en modo distancia se ve su distancia y se puede cambiar
   const t0 = before.trips[0];
   await app.click(`#row-${t0.id}`);
   await app.keyboard.press('e');
-  await expect(app.locator('#tripForm')).toBeVisible();
+  await panelReady(app, '#tripForm', '#tDate');
   await pick(app, 'dist');
   const km = +(t0.odoEnd - t0.odoStart).toFixed(3);
   await expect(app.locator('#tDist')).toHaveValue(String(km));
