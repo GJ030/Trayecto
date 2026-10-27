@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolvePoints, tripPoints } from './routes';
 import type { RoutePoint } from './schema';
+import { hashStr } from '@/shared/utils/math';
 import { makePlaces, trip } from '@/testing/fixtures';
 
 const places = makePlaces();
@@ -88,6 +89,29 @@ describe('tripPoints', () => {
     expect(tripPoints(trip({ origin: 'Gama' }), places)).toEqual([]);
     expect(tripPoints(trip({ origin: 'Nadie' }), places)).toEqual([]);
     expect(tripPoints(trip(), [])).toEqual([]);
+  });
+});
+
+describe('tripPoints: huella del algoritmo', () => {
+  /* Las rutas generadas ya no se guardan, se regeneran al abrir: si el algoritmo cambia, los viajes
+     existentes se verían distintos. Si esta prueba falla, decide a propósito si el cambio vale la pena
+     (y actualiza la huella). La hora se compara relativa a la salida para no depender de la zona horaria. */
+  const fingerprint = (pts: RoutePoint[]) =>
+    hashStr(
+      pts
+        .map((p) => [p.lat, p.lng, Date.parse(p.t) - Date.parse(pts[0].t), p.speed].join(','))
+        .join(';'),
+    );
+  it.each([
+    ['viaje normal', trip(), 696978961],
+    [
+      'cruza la medianoche',
+      trip({ id: 't7', depart: '23:40', arrive: '00:25', odoEnd: 1018 }),
+      3204308239,
+    ],
+    ['recorrido corto', trip({ id: 't9', odoEnd: 1003 }), 2519154547],
+  ])('%s', (_n, t, expected) => {
+    expect(fingerprint(tripPoints(t, places))).toBe(expected);
   });
 });
 

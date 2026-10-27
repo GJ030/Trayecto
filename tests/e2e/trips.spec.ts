@@ -223,3 +223,22 @@ test('los viajes sobreviven a una recarga (localStorage)', async ({ app }) => {
   expect(after.trips).toEqual(before.trips);
   expect(after.places).toEqual(before.places);
 });
+
+test('las rutas generadas no se guardan en localStorage, pero reaparecen idénticas al recargar', async ({
+  app,
+}) => {
+  const before = await getState(app);
+  const auto = before.trips.filter((t) => t.pointsSource === 'auto');
+  expect(auto.length).toBeGreaterThan(5);
+  expect(auto.every((t) => t.points.length >= 20)).toBe(true);
+
+  const stored = await getStored(app);
+  expect(stored!.trips.filter((t) => 'points' in t)).toHaveLength(0);
+  const bytes = await app.evaluate(() => (localStorage.getItem('trayecto:v2') || '').length);
+  expect(bytes).toBeLessThan(JSON.stringify(before).length * 0.4);
+
+  await app.reload();
+  await expect(app.locator('#content .view')).toBeVisible();
+  const after = await getState(app);
+  expect(after.trips).toEqual(before.trips);
+});

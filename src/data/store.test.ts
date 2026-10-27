@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { parseBackup, DATA_VERSION } from './schema';
+import { migrate } from './migrations';
+import { parseBackup, DATA_VERSION, normalize, stringifyData } from './schema';
 import {
   S,
   adoptData,
@@ -196,5 +197,39 @@ describe('eventos de cambio', () => {
       { scope: ['ui'], persist: false, render: true },
       { scope: ['view'], persist: false, render: true },
     ]);
+  });
+});
+
+describe('guardado sin rutas generadas', () => {
+  beforeEach(resetState);
+
+  it('el texto guardado pesa mucho menos y no tiene los points de los viajes auto', () => {
+    S.trips[1].pointsSource = 'imported';
+    const full = JSON.stringify(S);
+    const slim = stringifyData(S);
+    expect(slim.length).toBeLessThan(full.length * 0.4);
+    const back = JSON.parse(slim);
+    expect(back.trips.filter((t: { points?: unknown }) => 'points' in t)).toHaveLength(1);
+    expect(back.trips[1].points).toEqual(S.trips[1].points);
+  });
+  it('al leerlo (migrate + normalize) los datos quedan idénticos a los originales', () => {
+    S.trips[0].computerKmpl = 14.2;
+    S.trips[0].computerUnit = 'kmpl';
+    S.trips[2].pointsSource = 'imported';
+    const original = clone(S);
+    const loaded = normalize(migrate(JSON.parse(stringifyData(S))));
+    expect(loaded).toEqual(original);
+  });
+  it('el respaldo manual conserva todos los points', () => {
+    const payload = JSON.parse(JSON.stringify(backupPayload()));
+    expect(payload.data.trips.every((t: { points: unknown[] }) => t.points.length >= 20)).toBe(
+      true,
+    );
+  });
+  it('el archivo de datos sin rutas se lee igual que el completo', () => {
+    const slim = JSON.parse(stringifyData(backupPayload(), 2));
+    const r = parseBackup(slim);
+    expect(r.error).toBeUndefined();
+    expect(r.data).toEqual(backupPayload().data);
   });
 });

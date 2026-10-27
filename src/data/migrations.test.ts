@@ -107,3 +107,33 @@ describe('migrate sobre datos v2', () => {
     expect(d.trips[1].points.length).toBeGreaterThanOrEqual(20);
   });
 });
+
+describe('migrate: rutas generadas que no se guardaron', () => {
+  const places = () => [place('pa', 'Alfa', 10, 10), place('pb', 'Beta', 10.04, 10.05)];
+  const stored = (t: Raw): Raw => ({ version: 2, places: places(), trips: [t] });
+
+  it("regenera los points de un viaje 'auto' sin points, idénticos a los originales", () => {
+    const full = trip({ pointsSource: 'auto' });
+    full.points = tripPoints(full, places());
+    const { points, ...slim } = full;
+    void points;
+    const d = migrate(stored(slim));
+    expect(d.trips[0].points).toEqual(full.points);
+    expect(d.trips[0].pointsSource).toBe('auto');
+  });
+  it('un viaje sin lugares ubicados queda con points []', () => {
+    const { points, ...slim } = trip({ origin: 'Nadie', pointsSource: 'auto' });
+    void points;
+    expect(migrate(stored(slim)).trips[0].points).toEqual([]);
+  });
+  it("no toca los viajes 'imported' ni los 'auto' que ya traen points", () => {
+    const pts = [
+      { lat: 1, lng: 1, t: '2024-06-15T08:00:00Z', speed: 5 },
+      { lat: 1.1, lng: 1.1, t: '2024-06-15T08:10:00Z', speed: 5 },
+    ];
+    const d = stored(trip({ pointsSource: 'imported', points: pts }));
+    expect(migrate(d)).toBe(d);
+    const e = stored(trip({ pointsSource: 'auto', points: [] }));
+    expect(migrate(e)).toBe(e);
+  });
+});

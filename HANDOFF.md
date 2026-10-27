@@ -26,13 +26,15 @@ Migrar `trayecto.html` (un solo archivo de ~2 900 líneas) a un proyecto manteni
 | 6 Pruebas E2E (Playwright)                     | hecha  | `4053262` |
 | Cierre: `CLAUDE.md` nuevo, sin `trayecto.html` | hecho  | `2ba1263` |
 
-`npm run check` pasa completo: typecheck, lint, 272 pruebas unitarias en 16 archivos, build y 37 pruebas E2E. Los mensajes de commit **no llevan** trailer de coautoría ni atribución a Claude. Línea base original: `git show 40db8c5:trayecto.html`.
+`npm run check` pasa completo: typecheck, lint, 283 pruebas unitarias en 16 archivos, build y 38 pruebas E2E. Los mensajes de commit **no llevan** trailer de coautoría ni atribución a Claude. Línea base original: `git show 40db8c5:trayecto.html`.
 
-### Pendiente: publicar
+### Publicado
 
-Los commits de las fases 5 y 6 y del cierre (`077492c`, `4053262`, `2ba1263`) existen solo en el clon local de la sesión anterior; **el push a `origin/main` (https://github.com/GJ030/Trayecto) fue rechazado con 403**: la app de Claude no tenía acceso al repo. Para publicar: instalar la app de Claude en el repo (https://github.com/apps/claude/installations/select_target) o reconectar GitHub (https://claude.ai/connect-github) y hacer `git push -u origin main`. Si el clon ya no existe, rehacer los tres commits a partir de `6a4f0d0` (las pruebas y el `CLAUDE.md` nuevo viven en ellos).
+Todo está en `origin/main` (https://github.com/GJ030/Trayecto). El push estuvo bloqueado con 403 hasta instalar la app de Claude en el repo; ya quedó resuelto. El repo `Trayecto-privado-respaldo` no se toca.
 
-El repo `Trayecto-privado-respaldo` no se toca.
+### Cambio posterior: las rutas generadas ya no se guardan
+
+Para que el `localStorage` y `trayecto-datos.json` no crezcan, `stringifyData` (`data/schema.ts`) omite los `points` de los viajes `pointsSource: 'auto'`; se regeneran al leer (`migrate` y `parseBackup`). Las rutas `'imported'` y el respaldo JSON manual conservan todos los `points`. Riesgo: cambiar `tripPoints` cambia las rutas de los viajes existentes; la prueba «huella del algoritmo» en `routes.test.ts` lo detecta. Detalle en `CLAUDE.md`.
 
 ## Entorno
 

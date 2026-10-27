@@ -1,5 +1,5 @@
 /** Almacenamiento en localStorage (claves compatibles con las versiones anteriores). */
-import type { Raw } from '../schema';
+import { stringifyData, type Raw } from '../schema';
 
 export const KEY = 'trayecto:v2',
   KEY_V1 = 'trayecto:v1';
@@ -35,9 +35,9 @@ export const Store = {
     }
     return this.mem ? JSON.parse(this.mem) : null;
   },
-  /* se serializa una sola vez (con 500 viajes son ~1.6 MB); la copia en memoria es ese mismo texto */
+  /* se serializa una sola vez; la copia en memoria es ese mismo texto. Sin las rutas generadas por la app (ver stringifyData) */
   save(d: unknown) {
-    const j = JSON.stringify(d);
+    const j = stringifyData(d);
     this.mem = j;
     if (this.ok) {
       try {
@@ -51,7 +51,7 @@ export const Store = {
   retireLegacy(d: unknown) {
     if (!this.legacy || !this.ok) return;
     try {
-      if (localStorage.getItem(KEY) === JSON.stringify(d)) localStorage.removeItem(KEY_V1);
+      if (localStorage.getItem(KEY) === stringifyData(d)) localStorage.removeItem(KEY_V1);
     } catch (e) {}
     this.legacy = false;
   },

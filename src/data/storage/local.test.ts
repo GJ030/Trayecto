@@ -37,6 +37,19 @@ describe('Store (localStorage)', () => {
   it('sin datos devuelve null', () => {
     expect(Store.load()).toBeNull();
   });
+  it('no guarda las rutas generadas por la app, solo las importadas', () => {
+    const pts = [{ lat: 1, lng: 1, t: '2024-06-15T08:00:00Z', speed: 5 }];
+    Store.save({
+      trips: [
+        { id: 'a', pointsSource: 'auto', points: pts },
+        { id: 'b', pointsSource: 'imported', points: pts },
+      ],
+    });
+    const back = Store.load();
+    expect('points' in back.trips[0]).toBe(false);
+    expect(back.trips[0].pointsSource).toBe('auto');
+    expect(back.trips[1].points).toEqual(pts);
+  });
   it('lee trayecto:v1 si no hay v2 y lo marca como heredado', () => {
     ls.setItem('trayecto:v1', JSON.stringify({ version: 1 }));
     expect(Store.load()).toEqual({ version: 1 });

@@ -120,6 +120,7 @@ settings: { defaultVehicle, defaultTag, hints, lastBackup, computerUnit }   // c
 ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ... }
 ```
 
+- **Las rutas `'auto'` no se guardan** (`stringifyData` en `data/schema.ts`, usado por `Store.save` y por el archivo de datos): se regeneran al leer (`migrate` para `localStorage`, `parseBackup` para archivos e importaciones). Solo se guardan los `points` de las rutas `'imported'`. Esto mantiene chico el `localStorage` y el archivo. El respaldo JSON manual **sí** lleva todos los `points`. Como se regeneran al abrir, **cambiar el algoritmo de `tripPoints` cambia las rutas de todos los viajes existentes**: la prueba «huella del algoritmo» (`routes.test.ts`) lo detecta; si falla, decídelo a propósito. Las horas de las rutas regeneradas dependen de la zona horaria del equipo.
 - Compatibilidad (no tocar): `localStorage` `trayecto:v2` (datos), `trayecto:v1` (se migra y se borra solo cuando v2 ya quedó guardado) y `trayecto:fs` (metadatos del archivo); IndexedDB `trayecto-fs` / almacén `kv` / clave `dir`; archivo `trayecto-datos.json` y carpeta `respaldos/`.
 - Los lugares se enlazan con los viajes **por nombre** (`norm(name)`), no por id.
 - `pointsSource`: `'auto'` = generados por la app (se **regeneran** al editar el viaje o al ubicar/mover un lugar que usa); `'imported'` = ruta ajena (nunca se sobrescribe). Si falta, `resolvePoints` lo deduce comparando con lo que generaría la app.

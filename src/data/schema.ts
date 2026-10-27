@@ -250,6 +250,17 @@ export function normalize(d?: Raw): AppData {
   o.ui.q = '';
   return o as AppData;
 }
+/* Texto JSON para guardar (localStorage y archivo de datos): las rutas generadas por la app (pointsSource 'auto') no se escriben,
+   son deterministas y se regeneran al leer (migrate / parseBackup). Las rutas importadas sí se guardan. */
+export function stringifyData(v: unknown, indent?: number): string {
+  return JSON.stringify(
+    v,
+    function (this: Raw, key: string, val: unknown) {
+      return key === 'points' && this && this.pointsSource === 'auto' ? undefined : val;
+    },
+    indent,
+  );
+}
 /* Validación y saneado de un respaldo ya analizado (importar, leer el archivo de datos y validar antes de escribirlo).
    Devuelve {error} o {data:{vehicles,places,trips,fuel,settings}, raw:{conteos originales}}: lo que no pasa el filtro se descarta y se nota en raw */
 export function parseBackup(o: Raw): ParsedBackup {

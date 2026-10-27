@@ -1,5 +1,5 @@
 /** Archivo de datos local (File System Access API). */
-import { parseBackup, type BackupData, type BackupFile } from '@/data/schema';
+import { parseBackup, stringifyData, type BackupData, type BackupFile } from '@/data/schema';
 import { idbDel, idbGet, idbSet } from './idb';
 import { Store } from './local';
 import { S, adoptData, backupPayload, emitChange, setAfterSave, snapshot } from '@/data/store';
@@ -405,7 +405,7 @@ async function writeOnce() {
       }
     }
   }
-  const text = JSON.stringify(v.payload, null, 2);
+  const text = stringifyData(v.payload, 2);
   await dailyBackup(fh, text);
   const target = fh || (await FS.handle!.getFileHandle(FS_FILE, { create: true }));
   const w = await target.createWritable();

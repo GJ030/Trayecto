@@ -63,7 +63,14 @@ test('exportar → borrar todo → importar deja los datos idénticos', async ({
   expect(restored.ui.selTrip).toBeNull();
 
   // y queda guardado: sobrevive a una recarga
-  expect(dataOf((await getStored(app))!)).toEqual(original);
+  // en localStorage las rutas generadas por la app no se guardan (se regeneran al abrir)
+  const slim = {
+    ...original,
+    trips: original.trips.map(({ points, ...t }) =>
+      t.pointsSource === 'auto' ? t : { ...t, points },
+    ),
+  };
+  expect(dataOf((await getStored(app))!)).toEqual(slim);
   await app.reload();
   await expect(app.locator('#content .view')).toBeVisible();
   expect(dataOf(await getState(app))).toEqual(original);
