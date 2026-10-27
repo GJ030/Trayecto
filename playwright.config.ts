@@ -5,5 +5,13 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: 'list',
-  use: { browserName: 'chromium', headless: true },
+  use: {
+    browserName: 'chromium',
+    headless: true,
+    viewport: { width: 1440, height: 900 },
+    locale: 'es-MX',
+    timezoneId: 'America/Mexico_City',
+    reducedMotion: 'reduce',
+    acceptDownloads: true,
+  },
 });
