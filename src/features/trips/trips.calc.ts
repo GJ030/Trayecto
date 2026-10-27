@@ -1,5 +1,5 @@
 /** Cálculos de un viaje: distancia, duración, velocidad, litros y costo. */
-import { tripKey, type Fuel, type SortKey, type Trip } from '@/data/schema';
+import { tripKey, type Fuel, type OdoMode, type SortKey, type Trip } from '@/data/schema';
 import { S } from '@/data/store';
 import { D, kmplOf, priceOf } from '@/features/fuel/fuel.calc';
 import { vehName } from '@/features/vehicles/vehicles.calc';
@@ -15,6 +15,29 @@ export const tripDur = (t: Pick<Trip, 'depart' | 'arrive'>) => {
   if (m <= 0) m += 1440;
   return m;
 };
+/** Quita el ruido de coma flotante (0.1 + 0.2) sin perder los 3 decimales que captura el usuario. */
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+/**
+ * Enlaza el odómetro final con la distancia recorrida. `source` es lo que el usuario está capturando
+ * ('end' = odómetro final, 'dist' = distancia de la computadora); el otro valor se deriva del inicial.
+ * Devuelve null para lo que no se puede calcular (faltan datos o no tiene sentido).
+ */
+export function linkOdometer(
+  start: number,
+  end: number,
+  dist: number,
+  source: OdoMode,
+): { end: number | null; dist: number | null } {
+  if (source === 'dist')
+    return {
+      end: isFinite(start) && isFinite(dist) && dist > 0 ? round3(start + dist) : null,
+      dist: isFinite(dist) ? dist : null,
+    };
+  return {
+    end: isFinite(end) ? end : null,
+    dist: isFinite(start) && isFinite(end) && end > start ? round3(end - start) : null,
+  };
+}
 export const tripKm = (t: Pick<Trip, 'odoStart' | 'odoEnd'>) =>
   Math.max(0, +t.odoEnd - +t.odoStart);
 export const tripSpeed = (t: Trip) => {

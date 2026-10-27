@@ -3,6 +3,7 @@ import {
   CK_MIN,
   ValidationError,
   type ComputerUnit,
+  type OdoMode,
   type Tag,
   type Trip,
 } from '@/data/schema';
@@ -10,7 +11,7 @@ import { S, batch } from '@/data/store';
 import { D, derive, kmplOf, priceOf } from '@/features/fuel/fuel.calc';
 import { placeOpts } from '@/features/places/places.calc';
 import { placesRepo } from '@/features/places/places.repo';
-import { compOf, tripCost, tripDur, tripKm, tripSpeed } from './trips.calc';
+import { compOf, linkOdometer, tripCost, tripDur, tripKm, tripSpeed } from './trips.calc';
 import { tripsRepo } from './trips.repo';
 import { defVeh, vehById, vehName, vehOptions } from '@/features/vehicles/vehicles.calc';
 import { mountMaps, parkMaps, tripMapHTML } from '@/maps/registry';
@@ -50,6 +51,7 @@ export function openTripPanel(edit?: Trip) {
     cval = hasC
       ? +(cu === 'l100' ? 100 / edit!.computerKmpl! : edit!.computerKmpl!).toFixed(2)
       : '';
+  const odoMode: OdoMode = S.settings.odoMode === 'dist' ? 'dist' : 'end';
   const combo = (id: string, label: string, ph: string, val?: string) =>
     `<div class="field"><label for="${id}">${label}</label><div class="combo"><input class="input" id="${id}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-lb" placeholder="${ph}" value="${esc(val || '')}" autocomplete="off"><ul class="combo-list" id="${id}-lb" role="listbox" aria-label="Lugares guardados" hidden></ul></div><div class="err" data-err="${id}"></div></div>`;
   openDrawer(
@@ -66,10 +68,23 @@ export function openTripPanel(edit?: Trip) {
       <div class="field"><label for="tDep">Salida</label><input class="input" type="time" id="tDep" value="${edit ? fromMin(toMin(edit.depart)) : dep}"></div>
       <div class="field"><label for="tArr">Llegada</label><input class="input" type="time" id="tArr" value="${edit ? fromMin(toMin(edit.arrive)) : ''}"><div class="err" data-err="tArr"></div></div>
     </div>
+    <div class="field"><span class="lbl" id="tOdoModeL">Capturar</span><div class="seg" role="radiogroup" aria-labelledby="tOdoModeL">${(
+      [
+        ['end', 'Odómetro final'],
+        ['dist', 'Distancia del viaje'],
+      ] as const
+    )
+      .map(
+        ([m, l]) =>
+          `<label><input type="radio" name="tOdoMode" value="${m}" ${odoMode === m ? 'checked' : ''}><span>${l}</span></label>`,
+      )
+      .join('')}</div></div>
     <div class="row row-2">
       <div class="field"><label for="tOdoS">Odómetro inicial</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tOdoS" value="${edit ? edit.odoStart : D.vs[dv]?.odo || ''}" inputmode="decimal"><span>km</span></div><div class="err" data-err="tOdoS"></div></div>
-      <div class="field"><label for="tOdoE">Odómetro final</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tOdoE" value="${edit ? edit.odoEnd : ''}" inputmode="decimal"><span>km</span></div><div class="err" data-err="tOdoE"></div></div>
+      <div class="field" id="tEndField" ${odoMode === 'end' ? '' : 'hidden'}><label for="tOdoE">Odómetro final</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tOdoE" value="${edit ? edit.odoEnd : ''}" inputmode="decimal"><span>km</span></div><div class="err" data-err="tOdoE"></div></div>
+      <div class="field" id="tDistField" ${odoMode === 'dist' ? '' : 'hidden'}><label for="tDist">Distancia del viaje</label><div class="input-unit"><input class="input num" type="number" step="0.1" min="0" id="tDist" value="${edit ? (linkOdometer(edit.odoStart, edit.odoEnd, NaN, 'end').dist ?? '') : ''}" inputmode="decimal" aria-describedby="tOdoDerived"><span>km</span></div><div class="err" data-err="tDist"></div></div>
     </div>
+    <div class="help odo-derived" id="tOdoDerived" aria-live="polite" hidden></div>
     <div class="row row-2">
       <div class="field"><label for="tVeh">Vehículo</label><select class="input" id="tVeh">${vehOptions(dv)}</select></div>
       <div class="field"><span class="lbl" id="tTagL">Etiqueta</span><div class="seg" role="radiogroup" aria-labelledby="tTagL">${['Trabajo', 'Personal'].map((t) => `<label><input type="radio" name="tTag" value="${t}" ${(edit ? edit.tag : S.settings.defaultTag) === t ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
@@ -90,13 +105,28 @@ export function openTripPanel(edit?: Trip) {
   );
   const f = req<HTMLFormElement>('#tripForm'),
     g = (id: string) => f.querySelector<HTMLInputElement>('#' + id)!;
-  let odoDirty = !!edit;
+  let odoDirty = !!edit,
+    mode: OdoMode = odoMode;
   setupCombo(g('tOrigin'), placeOpts, (v) => `“${v}” se guardará como lugar nuevo`);
   setupCombo(g('tDest'), placeOpts, (v) => `“${v}” se guardará como lugar nuevo`);
   const setV = (id: string, html: string | null) => {
     const el = g(id);
     el.innerHTML = html ?? '—';
     el.classList.toggle('empty-v', html == null);
+  };
+  /* Lo que se captura (odómetro final o distancia) manda; el otro valor se deriva del odómetro inicial */
+  const syncOdo = () => {
+    const r = linkOdometer(
+      parseFloat(g('tOdoS').value),
+      parseFloat(g('tOdoE').value),
+      parseFloat(g('tDist').value),
+      mode,
+    );
+    if (mode === 'dist') g('tOdoE').value = r.end == null ? '' : String(r.end);
+    else g('tDist').value = r.dist == null ? '' : String(r.dist);
+    const d = req('#tOdoDerived', f);
+    d.hidden = mode !== 'dist' || r.end == null;
+    d.textContent = r.end == null ? '' : `Odómetro final: ${NF1.format(r.end)} km`;
   };
   const upd = () => {
     const sv = g('tOdoS').value,
@@ -132,14 +162,27 @@ export function openTripPanel(edit?: Trip) {
   g('tOdoS').addEventListener('input', () => {
     odoDirty = true;
   });
+  for (const id of ['tOdoS', 'tOdoE', 'tDist']) g(id).addEventListener('input', syncOdo);
+  f.querySelectorAll<HTMLInputElement>('input[name=tOdoMode]').forEach((r) =>
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      mode = r.value === 'dist' ? 'dist' : 'end';
+      req('#tEndField', f).hidden = mode !== 'end';
+      req('#tDistField', f).hidden = mode !== 'dist';
+      syncOdo();
+      g(mode === 'dist' ? 'tDist' : 'tOdoE').focus({ preventScroll: true });
+    }),
+  );
   g('tVeh').addEventListener('change', () => {
     if (!odoDirty) g('tOdoS').value = String(D.vs[g('tVeh').value]?.odo || '');
+    syncOdo();
     upd();
   });
   f.addEventListener('submit', (e) => {
     e.preventDefault();
     saveTrip(f, edit);
   });
+  syncOdo();
   upd();
   guardChanges(f);
 }
@@ -171,8 +214,16 @@ function saveTrip(f: HTMLFormElement, edit?: Trip) {
     date = g('tDate').value,
     dep = g('tDep').value,
     arr = g('tArr').value;
+  const mode: OdoMode =
+    f.querySelector<HTMLInputElement>('input[name=tOdoMode]:checked')?.value === 'dist'
+      ? 'dist'
+      : 'end';
   const s = parseFloat(g('tOdoS').value),
-    e = parseFloat(g('tOdoE').value);
+    dist = parseFloat(g('tDist').value),
+    e =
+      mode === 'dist'
+        ? (linkOdometer(s, NaN, dist, 'dist').end ?? NaN)
+        : parseFloat(g('tOdoE').value);
   const chk = (id: string, msg: string) => {
     setErr(f, id, msg);
     if (msg) errs.push(id);
@@ -189,16 +240,28 @@ function saveTrip(f: HTMLFormElement, edit?: Trip) {
         : '',
   );
   chk('tOdoS', isFinite(s) && s >= 0 ? '' : 'Captura el odómetro inicial.');
-  chk(
-    'tOdoE',
-    !isFinite(e)
-      ? 'Captura el odómetro final.'
-      : isFinite(s) && e <= s
-        ? 'Debe ser mayor al inicial.'
-        : isFinite(s) && e - s > 2000
-          ? 'La distancia parece demasiado grande.'
-          : '',
-  );
+  if (mode === 'dist')
+    chk(
+      'tDist',
+      !isFinite(dist)
+        ? 'Captura la distancia.'
+        : dist <= 0
+          ? 'Debe ser mayor a 0.'
+          : dist > 2000
+            ? 'La distancia parece demasiado grande.'
+            : '',
+    );
+  else
+    chk(
+      'tOdoE',
+      !isFinite(e)
+        ? 'Captura el odómetro final.'
+        : isFinite(s) && e <= s
+          ? 'Debe ser mayor al inicial.'
+          : isFinite(s) && e - s > 2000
+            ? 'La distancia parece demasiado grande.'
+            : '',
+    );
   const cr = readComputer(f);
   chk('tComp', cr.err);
   if (errs.length) {
@@ -224,6 +287,7 @@ function saveTrip(f: HTMLFormElement, edit?: Trip) {
           'Trabajo') as Tag,
         computerKmpl: cr.kmpl,
         computerUnit: cr.unit,
+        odoMode: mode,
       };
       return edit ? tripsRepo.update(edit.id, input) : tripsRepo.create(input);
     });

@@ -116,7 +116,7 @@ trip:  { id, date, depart, arrive, origin, destination, odoStart, odoEnd, vehicl
          computerKmpl: number | null,                     // rendimiento de la computadora, normalizado a km/L (3–40)
          computerUnit: 'kmpl' | 'l100' | null }           // unidad en que se capturó, solo para mostrarlo igual
 fuel:  { id, date, station, odometer, liters, price, full, vehicleId }
-settings: { defaultVehicle, defaultTag, hints, lastBackup, computerUnit }   // computerUnit = última unidad usada en el formulario
+settings: { defaultVehicle, defaultTag, hints, lastBackup, computerUnit, odoMode }   // computerUnit y odoMode = últimas preferencias del formulario de viaje
 ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ... }
 ```
 
@@ -127,6 +127,10 @@ ui:    { view, collapsed, sort, tf, selTrip, selPlace, selPair, placesLayer, ...
 - `tripPoints` (`data/routes.ts`) es determinista (semilla = id del viaje): recorrido ortogonal tipo calle, puntos y velocidades coherentes con la hora de salida/llegada, también si cruza la medianoche; el promedio de `speed` coincide con la velocidad del viaje. Devuelve `[]` si origen o destino no tienen lat/lng.
 - **Migración v1 → v2** (`migrate`, también al importar): los lugares de ejemplo reciben lat/lng por nombre solo si conservan su posición original; se generan los `points` y `pointsSource` que falten.
 - **Respaldo JSON** (`backupPayload`/`parseBackup`): `{ app, version, exportedAt, data }`. Al importar se validan lat/lng (rango), se descartan puntos inválidos, se regeneran los que falten y se rechaza una versión mayor a 2. Los CSV (viajes, cargas) llevan BOM UTF-8 y neutralizan celdas que empiezan con `= + - @`.
+
+## Odómetro final o distancia (formulario de viaje)
+
+Un interruptor «Capturar: Odómetro final | Distancia del viaje» elige qué se escribe; solo se ve ese campo junto al odómetro inicial. El otro valor se deriva (`linkOdometer` en `trips.calc.ts`, redondeado a 3 decimales): en modo distancia el final es inicial + distancia y se muestra bajo el campo; en modo final la distancia aparece en el recuadro de cálculo. **Manda siempre el modo elegido**: si cambia el inicial, se conserva lo que se está capturando y se recalcula lo otro. El modo se recuerda en `settings.odoMode` (`'end'` por omisión; campo opcional, sin subir `DATA_VERSION`; `normalize` corrige valores inválidos). Lo único que se guarda del viaje sigue siendo `odoStart` y `odoEnd`. Ids del formulario: `tOdoS`, `tOdoE`, `tDist`, interruptor `input[name=tOdoMode]`.
 
 ## Rendimiento de la computadora por viaje
 

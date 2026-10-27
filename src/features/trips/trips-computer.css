@@ -28,3 +28,10 @@
 .acc-list .comp-acc {
   margin-top: 0;
 }
+#tripForm .field[hidden],
+.odo-derived[hidden] {
+  display: none;
+}
+.odo-derived {
+  margin: -6px 0 14px;
+}

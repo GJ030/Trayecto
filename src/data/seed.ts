@@ -128,6 +128,7 @@ export function seed(): SeedData {
       hints: true,
       lastBackup: null,
       computerUnit: 'kmpl',
+      odoMode: 'end',
     },
     ui: {},
   };

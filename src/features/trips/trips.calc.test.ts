@@ -4,6 +4,7 @@ import {
   compOf,
   filteredTrips,
   fmtComp,
+  linkOdometer,
   tripCost,
   tripDur,
   tripKm,
@@ -201,5 +202,34 @@ describe('compAccuracy: precisión de la computadora', () => {
     S.fuel.length = 1;
     derive();
     expect(compAccuracy('v1')).toBeNull();
+  });
+});
+
+describe('linkOdometer: odómetro final ↔ distancia', () => {
+  it("capturando la distancia ('dist'), el final es inicial + distancia", () => {
+    expect(linkOdometer(1000, NaN, 12.5, 'dist')).toEqual({ end: 1012.5, dist: 12.5 });
+    expect(linkOdometer(48702, 99999, 17.4, 'dist')).toEqual({ end: 48719.4, dist: 17.4 });
+  });
+  it("capturando el final ('end'), la distancia es final − inicial", () => {
+    expect(linkOdometer(1000, 1012.5, NaN, 'end')).toEqual({ end: 1012.5, dist: 12.5 });
+    expect(linkOdometer(48702, 48719.4, 5, 'end')).toEqual({ end: 48719.4, dist: 17.4 });
+  });
+  it('quita el ruido de coma flotante', () => {
+    expect(linkOdometer(0.1, NaN, 0.2, 'dist').end).toBe(0.3);
+    expect(linkOdometer(100.1, 100.4, NaN, 'end').dist).toBe(0.3);
+    expect(linkOdometer(1000.25, NaN, 12.3, 'dist').end).toBe(1012.55);
+  });
+  it('si cambia el inicial, lo capturado se conserva y se recalcula lo otro', () => {
+    expect(linkOdometer(2000, NaN, 12.5, 'dist')).toEqual({ end: 2012.5, dist: 12.5 });
+    expect(linkOdometer(2000, 1012.5, NaN, 'end')).toEqual({ end: 1012.5, dist: null });
+  });
+  it('faltan datos o no tienen sentido: lo que no se puede calcular es null', () => {
+    expect(linkOdometer(NaN, NaN, 12.5, 'dist')).toEqual({ end: null, dist: 12.5 });
+    expect(linkOdometer(1000, NaN, NaN, 'dist')).toEqual({ end: null, dist: null });
+    expect(linkOdometer(1000, NaN, 0, 'dist').end).toBeNull();
+    expect(linkOdometer(1000, NaN, -5, 'dist').end).toBeNull();
+    expect(linkOdometer(NaN, 1012, NaN, 'end')).toEqual({ end: 1012, dist: null });
+    expect(linkOdometer(1000, 1000, NaN, 'end').dist).toBeNull();
+    expect(linkOdometer(1000, 900, NaN, 'end').dist).toBeNull();
   });
 });

@@ -36,6 +36,10 @@ Todo está en `origin/main` (https://github.com/GJ030/Trayecto). El push estuvo 
 
 Para que el `localStorage` y `trayecto-datos.json` no crezcan, `stringifyData` (`data/schema.ts`) omite los `points` de los viajes `pointsSource: 'auto'`; se regeneran al leer (`migrate` y `parseBackup`). Las rutas `'imported'` y el respaldo JSON manual conservan todos los `points`. Riesgo: cambiar `tripPoints` cambia las rutas de los viajes existentes; la prueba «huella del algoritmo» en `routes.test.ts` lo detecta. Detalle en `CLAUDE.md`.
 
+### Cambio posterior: odómetro final o distancia
+
+El formulario de viaje tiene un interruptor para capturar el odómetro final o la distancia que marca la computadora; el otro valor se calcula. Se recuerda en `settings.odoMode`. Detalle en `CLAUDE.md`; pruebas en `trips.calc.test.ts`, `trips.repo.test.ts` y `tests/e2e/odometer.spec.ts`.
+
 ## Entorno
 
 - Node 22, Vite 8 (Rolldown), TypeScript 6, Vitest 5, ESLint 10, Playwright 1.64. Comandos y definición de terminado: ver `CLAUDE.md`.

@@ -20,6 +20,9 @@ export const TAGS = ['Trabajo', 'Personal'] as const;
 export type Tag = (typeof TAGS)[number];
 export const COMPUTER_UNITS = ['kmpl', 'l100'] as const;
 export type ComputerUnit = (typeof COMPUTER_UNITS)[number];
+/** Qué captura el usuario en el formulario de viaje: el odómetro final o la distancia recorrida. */
+export const ODO_MODES = ['end', 'dist'] as const;
+export type OdoMode = (typeof ODO_MODES)[number];
 export const POINTS_SOURCES = ['auto', 'imported'] as const;
 export type PointsSource = (typeof POINTS_SOURCES)[number];
 export const VIEW_NAMES = [
@@ -96,6 +99,8 @@ export interface Settings {
   hints: boolean;
   lastBackup: string | null;
   computerUnit: ComputerUnit;
+  /** Último modo de captura del odómetro usado en el formulario de viaje. */
+  odoMode: OdoMode;
 }
 export interface TripFilter {
   tag: 'Todos' | Tag;
@@ -227,9 +232,11 @@ export function normalize(d?: Raw): AppData {
       hints: true,
       lastBackup: null,
       computerUnit: 'kmpl',
+      odoMode: 'end',
     },
     o.settings || {},
   );
+  if (!ODO_MODES.includes(o.settings.odoMode)) o.settings.odoMode = 'end';
   o.ui = Object.assign(
     {
       view: 'inicio',
@@ -379,7 +386,12 @@ export type TripInput = Pick<
   | 'odoEnd'
   | 'vehicleId'
   | 'tag'
-> & { computerKmpl?: number | null; computerUnit?: ComputerUnit | null };
+> & {
+  computerKmpl?: number | null;
+  computerUnit?: ComputerUnit | null;
+  /** Modo de captura del odómetro con que se llenó el formulario (solo se recuerda como preferencia). */
+  odoMode?: OdoMode;
+};
 /** Devuelve el primer problema del viaje, o null si es válido. */
 export function checkTrip(t: TripInput): string | null {
   if (!t.origin.trim()) return 'Escribe el lugar de origen.';

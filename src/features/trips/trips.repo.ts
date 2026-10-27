@@ -46,9 +46,10 @@ const routeSig = (x: TripCore) =>
     +x.odoStart,
     +x.odoEnd,
   ].join('|');
-/** Recuerda la última unidad del rendimiento de la computadora usada en el formulario. */
+/** Recuerda las últimas preferencias del formulario: unidad del rendimiento de la computadora y modo de captura del odómetro. */
 function rememberUnit(input: TripInput) {
   if (input.computerKmpl) S.settings.computerUnit = input.computerUnit === 'l100' ? 'l100' : 'kmpl';
+  if (input.odoMode) S.settings.odoMode = input.odoMode === 'dist' ? 'dist' : 'end';
 }
 
 export interface RetargetedTrip {

@@ -52,6 +52,15 @@ describe('tripsRepo.create', () => {
     const u = tripsRepo.create(input({ computerKmpl: 99, computerUnit: 'kmpl' }));
     expect(u).toMatchObject({ computerKmpl: null, computerUnit: null });
   });
+  it('recuerda el modo de captura del odómetro usado en el formulario', () => {
+    expect(S.settings.odoMode).toBe('end');
+    tripsRepo.create(input({ odoMode: 'dist' }));
+    expect(S.settings.odoMode).toBe('dist');
+    const t = tripsRepo.create(input({ odoStart: 2000, odoEnd: 2010 }));
+    expect(S.settings.odoMode).toBe('dist'); // sin odoMode no cambia
+    tripsRepo.update(t.id, input({ odoStart: 2000, odoEnd: 2010, odoMode: 'end' }));
+    expect(S.settings.odoMode).toBe('end');
+  });
   it('sin rendimiento de la computadora no cambia la unidad recordada', () => {
     S.settings.computerUnit = 'l100';
     tripsRepo.create(input());

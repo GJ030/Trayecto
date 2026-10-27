@@ -168,9 +168,15 @@ describe('normalize', () => {
       hints: true,
       lastBackup: null,
       computerUnit: 'kmpl',
+      odoMode: 'end',
     });
     expect(d.ui).toMatchObject({ view: 'inicio', placesLayer: 'lugares', q: '' });
     expect(d.ui.tf).toEqual({ tag: 'Todos', vehicle: 'all', from: '', to: '' });
+  });
+  it('odoMode: conserva uno válido y corrige uno inválido', () => {
+    expect(normalize({ settings: { odoMode: 'dist' } }).settings.odoMode).toBe('dist');
+    expect(normalize({ settings: { odoMode: 'raro' } }).settings.odoMode).toBe('end');
+    expect(normalize({ settings: { odoMode: null } }).settings.odoMode).toBe('end');
   });
   it('respeta lo guardado pero limpia la búsqueda', () => {
     const d = normalize({ ui: { view: 'viajes', q: 'algo', tf: { tag: 'Personal' } } });
