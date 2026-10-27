@@ -1,28 +1,34 @@
-/** Menú lateral, barra superior y menú «Nuevo registro». */
-import { go, render } from '@/app/nav';
-import { paintStatusBtn } from '@/data/storage/file';
-import type { ViewName } from '@/data/schema';
-import { S, save } from '@/data/store';
-import { openFuelPanel } from '@/features/fuel/fuel.form';
-import { openTripPanel } from '@/features/trips/trips.form';
+/**
+ * Menú lateral, barra superior y menú «Nuevo registro».
+ * Solo toca el DOM: lo que ocurre al hacer clic lo decide `app/` con los callbacks de `buildChrome`.
+ */
 import { $$, app, req } from './dom';
 import { icon } from './icons';
 import { cap, esc } from '@/shared/utils/format';
 
-export function applyChrome() {
-  app.classList.toggle('collapsed', !!S.ui.collapsed);
-  document.body.classList.toggle('no-hints', !S.settings.hints);
+export interface ChromeHandlers {
+  onNavigate(view: string): void;
+  onToggleCollapse(): void;
+  onNewTrip(): void;
+  onNewFuel(): void;
+}
+let handlers: ChromeHandlers | null = null;
+
+/** Refleja en el DOM si el menú está contraído y si se muestran las pistas de teclado. */
+export function applyChrome(state: { collapsed: boolean; hints: boolean }) {
+  app.classList.toggle('collapsed', !!state.collapsed);
+  document.body.classList.toggle('no-hints', !state.hints);
   const cb = document.querySelector<HTMLElement>('#btnCollapse');
   if (cb) {
-    const l = S.ui.collapsed ? 'Expandir menú' : 'Contraer menú';
+    const l = state.collapsed ? 'Expandir menú' : 'Contraer menú';
     req('.nav-label', cb).textContent = l;
     cb.dataset.tip = l;
     cb.setAttribute('aria-label', l);
-    cb.setAttribute('aria-expanded', String(!S.ui.collapsed));
+    cb.setAttribute('aria-expanded', String(!state.collapsed));
   }
-  paintStatusBtn();
 }
-export function buildChrome() {
+export function buildChrome(h: ChromeHandlers) {
+  handlers = h;
   const nb = ([v, l, ic]: string[]) =>
     `<div class="nav-wrap"><button class="nav-item" data-view="${v}" data-tip="${l}">${icon(ic)}<span class="nav-label">${l}</span></button></div>`;
   req('#navMain').innerHTML = [
@@ -57,15 +63,9 @@ export function buildChrome() {
       ),
     );
   $$('.nav-item[data-view]').forEach((b) =>
-    b.addEventListener('click', () => go(b.dataset.view as ViewName)),
+    b.addEventListener('click', () => h.onNavigate(b.dataset.view!)),
   );
-  req('#btnCollapse').addEventListener('click', () => {
-    S.ui.collapsed = !S.ui.collapsed;
-    save();
-    applyChrome();
-    hideTip();
-    if (S.ui.view === 'ajustes') render();
-  });
+  req('#btnCollapse').addEventListener('click', () => h.onToggleCollapse());
 }
 /* ---- Tooltip del menú contraído ---- */
 const tipEl = req('#tip');
@@ -134,8 +134,8 @@ menu.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>('[data-new]');
   if (!b) return;
   closeMenu();
-  if (b.dataset.new === 'trip') openTripPanel();
-  else openFuelPanel();
+  if (b.dataset.new === 'trip') handlers?.onNewTrip();
+  else handlers?.onNewFuel();
 });
 document.addEventListener('click', (e) => {
   if (!menu.hidden && !(e.target as HTMLElement).closest('.new-wrap')) closeMenu();

@@ -1,7 +1,8 @@
 import { S } from '@/data/store';
 import { D, cpkOf } from '@/features/fuel/fuel.calc';
 import { tripKm } from '@/features/trips/trips.calc';
-import { compAccHTML } from './vehicles.calc';
+import { compAccuracy } from '@/features/trips/trips.calc';
+import { compAccHTML } from '@/shared/ui/blocks';
 import { emptyState } from '@/shared/ui/blocks';
 import { icon } from '@/shared/ui/icons';
 import { MXN, NF0, NF1, esc } from '@/shared/utils/format';
@@ -20,7 +21,7 @@ export function renderVehiculos() {
       <div class="stat-label">${icon('gauge', 14)} Odómetro actual</div><div class="stat-val xl">${NF0.format(st.odo || 0)}<span class="u">km</span></div>
       <div class="vc-stats"><div><b>${tr.length}</b><small>Viajes</small></div><div><b>${NF0.format(sum(tr, tripKm))}</b><small>Km registrados</small></div><div><b>${st.avg ? NF1.format(st.avg) : '—'}</b><small>km/L prom.</small></div><div><b>${c != null ? MXN.format(c) : '—'}</b><small>Costo por km</small></div></div>
       ${v.tank ? `<p class="muted-xs" style="margin-top:12px">Tanque de ${NF0.format(v.tank)} L${st.avg ? ` · autonomía aprox. ${NF0.format(v.tank * st.avg)} km` : ''}</p>` : ''}
-      ${compAccHTML(v.id)}
+      ${compAccHTML(compAccuracy(v.id), v)}
     </section>`;
     })
     .join('');

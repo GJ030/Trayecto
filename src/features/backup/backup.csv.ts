@@ -1,6 +1,7 @@
 import { S } from '@/data/store';
 import { D, fuelTotal } from '@/features/fuel/fuel.calc';
-import { compOf, tripCost, tripDur, tripKey, tripKm, tripSpeed } from '@/features/trips/trips.calc';
+import { tripKey } from '@/data/schema';
+import { compOf, tripCost, tripDur, tripKm, tripSpeed } from '@/features/trips/trips.calc';
 import { vehName } from '@/features/vehicles/vehicles.calc';
 import { toast } from '@/shared/ui/toast';
 import { isoDate } from '@/shared/utils/dates';

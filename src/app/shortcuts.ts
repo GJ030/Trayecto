@@ -1,9 +1,10 @@
-import { focusSearch, render } from './nav';
-import { S, save } from '@/data/store';
+import { focusSearch } from './nav';
+import { S, setQuery, updateUi } from '@/data/store';
 import { openFuelPanel } from '@/features/fuel/fuel.form';
-import { closePlaceMenu, placeUi, runUndo } from '@/features/places/places.actions';
+import { cancelLocate } from '@/features/places/places.locate';
+import { closePlaceMenu, placeUi, runUndo } from '@/features/places/places.ui';
 import { openTripPanel } from '@/features/trips/trips.form';
-import { cancelLocate, locState } from '@/maps/placesMap';
+import { locState } from '@/maps/placesMap';
 import { closeMenu, menu } from '@/shared/ui/chrome';
 import { qEl } from '@/shared/ui/dom';
 import { drawerState, requestCloseDrawer } from '@/shared/ui/drawer';
@@ -43,23 +44,18 @@ document.addEventListener('keydown', (e) => {
     if (t === qEl) {
       if (qEl.value) {
         qEl.value = '';
-        S.ui.q = '';
-        render();
+        setQuery('');
       } else qEl.blur();
       return;
     }
     if (S.ui.view === 'viajes' && S.ui.selTrip) {
       const id = S.ui.selTrip;
-      S.ui.selTrip = null;
-      save();
-      render();
+      updateUi({ selTrip: null });
       document.getElementById('row-' + id)?.focus({ preventScroll: true });
       return;
     }
     if (S.ui.view === 'lugares' && (S.ui.selPlace || S.ui.selPair)) {
-      S.ui.selPlace = null;
-      S.ui.selPair = null;
-      render();
+      updateUi({ selPlace: null, selPair: null }, { persist: false });
       return;
     }
     return;

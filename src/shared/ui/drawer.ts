@@ -1,5 +1,4 @@
 /** Panel lateral deslizante. */
-import { mountMaps, parkMaps } from '@/maps/registry';
 import { emptyState } from './blocks';
 import { hideTip } from './chrome';
 import { $$, req } from './dom';
@@ -7,6 +6,11 @@ import { icon } from './icons';
 import { confirmDialog } from './modal';
 import { esc } from '@/shared/utils/format';
 
+/** Ganchos para los mapas que viven dentro del panel; `app/` los enlaza a `maps/registry`. */
+export const drawerHooks = {
+  park: (_root: HTMLElement) => {},
+  mount: (_root: HTMLElement) => {},
+};
 export const drawer = req('#drawer'),
   backdrop = req('#backdrop');
 export const drawerState: {
@@ -20,9 +24,9 @@ export function drawerHead(title: string, ic: string, eyebrow = 'Nuevo registro'
 export function openDrawer(html: string, focusSel?: string) {
   if (!drawerState.open) drawerState.opener = document.activeElement as HTMLElement | null;
   drawerState.guard = null;
-  parkMaps(drawer);
+  drawerHooks.park(drawer);
   drawer.innerHTML = html;
-  mountMaps(drawer);
+  drawerHooks.mount(drawer);
   drawer.inert = false;
   drawer.classList.add('open');
   backdrop.classList.add('open');
@@ -48,9 +52,9 @@ export function closeDrawer() {
   /* al terminar de deslizarse, libera el mapa del resumen (y su contexto WebGL) si el panel sigue cerrado */
   setTimeout(() => {
     if (!drawerState.open && drawer.querySelector('[data-tmap]')) {
-      parkMaps(drawer);
+      drawerHooks.park(drawer);
       drawer.innerHTML = '';
-      mountMaps(drawer);
+      drawerHooks.mount(drawer);
     }
   }, 450);
 }
@@ -95,6 +99,29 @@ drawer.addEventListener('keydown', (e) => {
       first.focus();
     }
   }
+});
+type DrawerFn = (el: HTMLElement) => void | Promise<void>;
+const drawerActions = new Map<string, DrawerFn>();
+const deleters = new Map<string, (id: string) => Promise<boolean>>();
+/** Acciones `data-dz` del panel (cada funcionalidad registra las suyas). */
+export function registerDrawerActions(entries: Record<string, DrawerFn>) {
+  for (const [k, fn] of Object.entries(entries)) {
+    if (drawerActions.has(k)) throw new Error(`Acción de panel duplicada: ${k}`);
+    drawerActions.set(k, fn);
+  }
+}
+/** Qué hace «Eliminar» en el pie del panel de edición de un tipo de registro (`data-kind`). */
+export function registerDrawerDelete(kind: string, fn: (id: string) => Promise<boolean>) {
+  deleters.set(kind, fn);
+}
+drawer.addEventListener('click', async (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>('[data-dz]');
+  if (!el) return;
+  const a = el.dataset.dz!;
+  if (a === 'close') requestCloseDrawer();
+  else if (a === 'delete') {
+    if (await deleters.get(el.dataset.kind!)?.(el.dataset.id!)) closeDrawer();
+  } else await drawerActions.get(a)?.(el);
 });
 export const noVehicleDrawer = (title: string) =>
   openDrawer(

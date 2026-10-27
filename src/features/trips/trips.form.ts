@@ -1,18 +1,17 @@
-import { render } from '@/app/nav';
-import { tripPoints } from '@/data/routes';
 import {
   CK_MAX,
   CK_MIN,
-  cleanComputer,
+  ValidationError,
   type ComputerUnit,
   type Tag,
   type Trip,
 } from '@/data/schema';
-import { S, save } from '@/data/store';
+import { S, batch } from '@/data/store';
 import { D, derive, kmplOf, priceOf } from '@/features/fuel/fuel.calc';
-import { placeOpts } from '@/features/places/places.form';
-import { canonicalPlace } from '@/features/places/places.repo';
+import { placeOpts } from '@/features/places/places.calc';
+import { placesRepo } from '@/features/places/places.repo';
 import { compOf, tripCost, tripDur, tripKm, tripSpeed } from './trips.calc';
+import { tripsRepo } from './trips.repo';
 import { defVeh, vehById, vehName, vehOptions } from '@/features/vehicles/vehicles.calc';
 import { mountMaps, parkMaps, tripMapHTML } from '@/maps/registry';
 import { closeMenu } from '@/shared/ui/chrome';
@@ -33,7 +32,6 @@ import { toast } from '@/shared/ui/toast';
 import { fmtDate, fromMin, isoDate, pad, toMin } from '@/shared/utils/dates';
 import { MXN, NF0, NF1, cap, durHTML, esc, fmtKm, money } from '@/shared/utils/format';
 import { norm } from '@/shared/utils/norm';
-import { uid } from '@/shared/utils/uid';
 
 /* ---- Nuevo viaje / Editar viaje ---- */
 export function openTripPanel(edit?: Trip) {
@@ -207,58 +205,48 @@ function saveTrip(f: HTMLFormElement, edit?: Trip) {
     g(errs[0]).focus();
     return;
   }
-  const oKnown = S.places.some((p) => norm(p.name) === norm(o)),
-    origin = canonicalPlace(o, oKnown ? null : d, e - s),
-    destination = canonicalPlace(d, origin, e - s);
-  const t: Omit<Trip, 'points' | 'pointsSource'> = {
-    id: uid('t'),
-    date,
-    depart: dep,
-    arrive: arr,
-    origin,
-    destination,
-    odoStart: s,
-    odoEnd: e,
-    vehicleId: g('tVeh').value,
-    tag: (f.querySelector<HTMLInputElement>('input[name=tTag]:checked')?.value || 'Trabajo') as Tag,
-    ...cleanComputer(cr.kmpl, cr.unit),
-  };
-  if (cr.kmpl) S.settings.computerUnit = cr.unit; /* recuerda la última unidad usada */
+  let saved: Trip | null;
+  try {
+    saved = batch(() => {
+      const oKnown = S.places.some((p) => norm(p.name) === norm(o)),
+        origin = placesRepo.ensure(o, oKnown ? null : d, e - s),
+        destination = placesRepo.ensure(d, origin, e - s);
+      const input = {
+        date,
+        depart: dep,
+        arrive: arr,
+        origin,
+        destination,
+        odoStart: s,
+        odoEnd: e,
+        vehicleId: g('tVeh').value,
+        tag: (f.querySelector<HTMLInputElement>('input[name=tTag]:checked')?.value ||
+          'Trabajo') as Tag,
+        computerKmpl: cr.kmpl,
+        computerUnit: cr.unit,
+      };
+      return edit ? tripsRepo.update(edit.id, input) : tripsRepo.create(input);
+    });
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      toast(err.message, 'err');
+      return;
+    }
+    throw err;
+  }
   if (edit) {
-    /* actualiza en su lugar (mismo id); la ruta se regenera solo si la generó la app y cambió algo de lo que la define */
-    const cur = S.trips.find((x) => x.id === edit.id);
-    if (!cur) {
+    /* la ruta se regenera solo si la generó la app y cambió algo de lo que la define (lo decide el repositorio) */
+    if (!saved) {
       closeDrawer();
       return;
     }
-    const sig = (x: Omit<Trip, 'points' | 'pointsSource'>) =>
-      [
-        x.date,
-        fromMin(toMin(x.depart)),
-        fromMin(toMin(x.arrive)),
-        x.origin,
-        x.destination,
-        +x.odoStart,
-        +x.odoEnd,
-      ].join('|');
-    const moved = sig(cur) !== sig(t);
-    Object.assign(cur, { ...t, id: cur.id });
-    if (cur.pointsSource === 'auto' && moved) cur.points = tripPoints(cur, S.places);
-    save();
-    render();
+    const cur: Trip = saved;
     closeDrawer();
     document.getElementById('row-' + cur.id)?.focus({ preventScroll: true });
     toast('Viaje actualizado');
     return;
   }
-  const nt: Trip = Object.assign(t, {
-    points: tripPoints(t, S.places),
-    pointsSource: 'auto' as const,
-  });
-  S.trips.push(nt);
-  save();
-  render();
-  showTripSummary(nt);
+  showTripSummary(saved!);
   toast('Viaje guardado');
 }
 function showTripSummary(t: Trip) {

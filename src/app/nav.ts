@@ -1,5 +1,5 @@
 import type { ViewName } from '@/data/schema';
-import { S, save } from '@/data/store';
+import { S, save, updateUi } from '@/data/store';
 import { renderRespaldo } from '@/features/backup/backup.view';
 import { renderInicio } from '@/features/dashboard/dashboard.view';
 import { derive } from '@/features/fuel/fuel.calc';
@@ -111,22 +111,21 @@ export function render(viewChanged?: boolean) {
 export function go(view: ViewName, keepQ?: boolean) {
   if (!VIEWS[view]) return;
   const changed = S.ui.view !== view;
-  S.ui.view = view;
-  if (!keepQ) {
-    S.ui.q = '';
-    qEl.value = '';
-  }
+  updateUi(keepQ ? { view } : { view, q: '' }, { silent: true });
+  if (!keepQ) qEl.value = '';
   save();
   render(changed);
   if (changed) window.scrollTo({ top: 0 });
 }
 /* ---- Búsqueda ---- */
 qEl.addEventListener('input', () => {
-  S.ui.q = qEl.value;
   if (!SEARCHABLE.includes(S.ui.view)) {
-    S.ui.view = 'viajes';
+    updateUi({ q: qEl.value, view: 'viajes' }, { silent: true });
     render(true);
-  } else render();
+  } else {
+    updateUi({ q: qEl.value }, { silent: true });
+    render();
+  }
 });
 export function focusSearch() {
   if (drawerState.open) return;

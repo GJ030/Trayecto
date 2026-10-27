@@ -23,28 +23,29 @@ import '@/shared/ui/toast.css';
 import '@/features/backup/backup-folder.css';
 import '@/styles/motion.css';
 import '@/styles/responsive.css';
+import { paintFS } from '@/app/fs-status';
 import { go, render } from '@/app/nav';
-import {
-  FS,
-  initFS,
-  linkFolder,
-  openLinked,
-  paintFS,
-  refreshBackups,
-  tick,
-} from '@/data/storage/file';
+import { startShell } from '@/app/shell';
+import '@/app/sync';
+import '@/app/events';
+import '@/app/shortcuts';
+import { FS, initFS, linkFolder, openLinked, refreshBackups, tick } from '@/data/storage/file';
 import { S } from '@/data/store';
+import '@/features/backup/backup.actions';
+import '@/features/dashboard/dashboard.actions';
+import '@/features/fuel/fuel.actions';
 import { openFuelPanel } from '@/features/fuel/fuel.form';
+import '@/features/places/places.actions';
+import '@/features/settings/settings.actions';
+import '@/features/stats/stats.actions';
+import '@/features/trips/trips.actions';
 import { openTripPanel } from '@/features/trips/trips.form';
+import '@/features/vehicles/vehicles.actions';
 import { locState } from '@/maps/placesMap';
 import { Play } from '@/maps/play';
 import { MapReg } from '@/maps/registry';
-import { applyChrome, buildChrome } from '@/shared/ui/chrome';
-import '@/app/events';
-import '@/app/shortcuts';
 
-buildChrome();
-applyChrome();
+startShell();
 render(true);
 paintFS();
 initFS();

@@ -1,6 +1,7 @@
 /** Reproducción de la ruta de un viaje. */
 import { EMPTY_FC, llOf } from './geo';
 import { MapReg, type MapEntry } from './registry';
+import { registerClick, registerInput } from '@/shared/ui/actions';
 import type { GeoJSONSource } from 'maplibre-gl';
 import type { Trip } from '@/data/schema';
 import { $, $$, contentEl, reduceMotion, req } from '@/shared/ui/dom';
@@ -151,3 +152,12 @@ export function syncPlay() {
     applyPlayAll();
   }
 }
+
+registerClick({
+  'play-toggle': (el) => togglePlay(el.dataset.id!),
+  'play-speed': (el) => {
+    Play.speed = +el.dataset.speed!;
+    updatePlayUI();
+  },
+});
+registerInput('[data-play-range]', (el) => scrubPlay(el.dataset.playRange!, +el.value));

@@ -343,3 +343,66 @@ export interface PairStat {
   avgMin: number;
   avgKm: number;
 }
+
+/* ---------------- Validación de registros (la usan los repositorios) ---------------- */
+/** Un registro no cumple el modelo: el mensaje es el primer problema encontrado. */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+const okDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const okTime = (s: unknown) => typeof s === 'string' && /^\d{1,2}:\d{2}$/.test(s);
+const num = (v: unknown) => typeof v === 'number' && isFinite(v);
+
+/** Datos para crear o editar un viaje (sin id, ruta ni rendimiento ya saneado). */
+export type TripInput = Pick<
+  Trip,
+  | 'date'
+  | 'depart'
+  | 'arrive'
+  | 'origin'
+  | 'destination'
+  | 'odoStart'
+  | 'odoEnd'
+  | 'vehicleId'
+  | 'tag'
+> & { computerKmpl?: number | null; computerUnit?: ComputerUnit | null };
+/** Devuelve el primer problema del viaje, o null si es válido. */
+export function checkTrip(t: TripInput): string | null {
+  if (!t.origin.trim()) return 'Escribe el lugar de origen.';
+  if (!t.destination.trim()) return 'Escribe el lugar de destino.';
+  if (!okDate(t.date)) return 'Elige la fecha.';
+  if (!okTime(t.depart) || !okTime(t.arrive)) return 'Indica la hora de salida y de llegada.';
+  if (t.depart === t.arrive) return 'La llegada debe ser distinta a la salida.';
+  if (!num(t.odoStart) || t.odoStart < 0) return 'Captura el odómetro inicial.';
+  if (!num(t.odoEnd)) return 'Captura el odómetro final.';
+  if (t.odoEnd <= t.odoStart) return 'Debe ser mayor al inicial.';
+  if (t.odoEnd - t.odoStart > 2000) return 'La distancia parece demasiado grande.';
+  if (!TAGS.includes(t.tag)) return 'La etiqueta no es válida.';
+  return null;
+}
+/** Datos para crear o editar una carga de gasolina. */
+export type FuelInput = Omit<Fuel, 'id'>;
+export function checkFuel(f: FuelInput): string | null {
+  if (!okDate(f.date)) return 'Elige la fecha.';
+  if (!f.station.trim()) return 'Escribe la gasolinera.';
+  if (!num(f.odometer) || f.odometer <= 0) return 'Captura el odómetro.';
+  if (!num(f.liters) || f.liters <= 0) return 'Captura los litros.';
+  if (f.liters > 200) return 'Revisa la cantidad de litros.';
+  if (!num(f.price) || f.price <= 0) return 'Captura el precio por litro.';
+  if (f.price > 100) return 'Revisa el precio por litro.';
+  return null;
+}
+export type VehicleInput = Omit<Vehicle, 'id' | 'color'> & { color?: string };
+export function checkVehicle(v: VehicleInput): string | null {
+  if (!v.name.trim()) return 'Escribe un nombre para el vehículo.';
+  return null;
+}
+export function checkPlaceName(name: string): string | null {
+  if (!name.trim()) return 'Escribe un nombre para el lugar.';
+  return null;
+}
+/** Clave de orden cronológico de un viaje. */
+export const tripKey = (t: Pick<Trip, 'date' | 'depart'>) => t.date + ' ' + t.depart;

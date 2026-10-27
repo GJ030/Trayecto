@@ -1,8 +1,7 @@
-import { render } from '@/app/nav';
 import { parseBackup } from '@/data/schema';
 import { FS } from '@/data/storage/file';
-import { S, adoptData, backupPayload, save } from '@/data/store';
-import { applyChrome } from '@/shared/ui/chrome';
+import { adoptData, backupPayload, emitChange } from '@/data/store';
+import { settingsRepo } from '@/features/settings/settings.repo';
 import { confirmDialog } from '@/shared/ui/modal';
 import { toast } from '@/shared/ui/toast';
 import { isoDate } from '@/shared/utils/dates';
@@ -15,9 +14,7 @@ export function exportJSON() {
     JSON.stringify(payload, null, 2),
     'application/json',
   );
-  S.settings.lastBackup = new Date().toISOString();
-  save();
-  render();
+  settingsRepo.markBackup();
   toast('Respaldo exportado');
 }
 export async function importJSON(text: string) {
@@ -42,8 +39,6 @@ export async function importJSON(text: string) {
   });
   if (!ok) return;
   adoptData(r.data);
-  save();
-  applyChrome();
-  render();
+  emitChange(['all', 'chrome']);
   toast('Respaldo importado');
 }

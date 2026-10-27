@@ -1,7 +1,7 @@
-import { render } from '@/app/nav';
-import type { Fuel } from '@/data/schema';
-import { S, save } from '@/data/store';
+import { ValidationError, type Fuel } from '@/data/schema';
+import { S } from '@/data/store';
 import { D, derive, priceOf } from './fuel.calc';
+import { fuelRepo } from './fuel.repo';
 import { defVeh, vehById, vehOptions } from '@/features/vehicles/vehicles.calc';
 import { closeMenu } from '@/shared/ui/chrome';
 import { setErr, setupCombo } from '@/shared/ui/combo';
@@ -17,8 +17,6 @@ import {
 import { toast } from '@/shared/ui/toast';
 import { isoDate } from '@/shared/utils/dates';
 import { MXN, NF0, NF1, NF2, esc } from '@/shared/utils/format';
-import { norm } from '@/shared/utils/norm';
-import { uid } from '@/shared/utils/uid';
 
 const stationOpts = () => {
   const m = new Map<string, number>();
@@ -178,25 +176,22 @@ function saveFuel(f: HTMLFormElement, edit?: Fuel) {
     g(errs[0]).focus();
     return;
   }
-  const canon = S.fuel.find((x) => norm(x.station) === norm(st))?.station || st;
-  const cur = edit && S.fuel.find((x) => x.id === edit.id);
+  const cur = edit && fuelRepo.get(edit.id);
   if (edit && !cur) {
     closeDrawer();
     return;
   }
-  const nf = cur || ({ id: uid('f') } as Fuel);
-  Object.assign(nf, {
-    date,
-    station: canon,
-    odometer: odo,
-    liters: +lit.toFixed(2),
-    price: +pr.toFixed(2),
-    full,
-    vehicleId: vid,
-  });
-  if (!cur) S.fuel.push(nf);
-  save();
-  render();
+  const input = { date, station: st, odometer: odo, liters: lit, price: pr, full, vehicleId: vid };
+  let nf: Fuel;
+  try {
+    nf = cur ? fuelRepo.update(cur.id, input)! : fuelRepo.create(input);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      toast(err.message, 'err');
+      return;
+    }
+    throw err;
+  }
   derive();
   closeDrawer();
   if (cur)

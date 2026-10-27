@@ -1,22 +1,26 @@
 /** Mapa de lugares con MapLibre y modo ubicación. */
 import type { GeoJSONSource, Map as MlMap, Marker, MapOptions } from 'maplibre-gl';
-import { render } from '@/app/nav';
-import type { PairStat, Trip } from '@/data/schema';
-import { tripPoints } from '@/data/routes';
-import { S, save } from '@/data/store';
-import { pairStats, placeVisits } from '@/features/places/places.calc';
-import { tripKey } from '@/features/trips/trips.calc';
+import { tripKey, type PairStat, type Trip } from '@/data/schema';
+import { S, requestRender } from '@/data/store';
 import { EMPTY_FC, boundsOf, llOf, speedGradient, type SpeedPoint } from './geo';
 import { MapLib } from './loader';
-import { MapReg, failMap, revealMap, type MapEntry } from './registry';
+import { failMap, revealMap, type MapEntry } from './registry';
 import { reduceMotion } from '@/shared/ui/dom';
 import { ACC } from '@/shared/ui/theme';
-import { toast } from '@/shared/ui/toast';
 import { esc } from '@/shared/utils/format';
 import { validGeo } from '@/shared/utils/geo';
 import { norm } from '@/shared/utils/norm';
 
 /* ---- Mapa de lugares ---- */
+/** Datos que el mapa de lugares necesita pintar (visitas por lugar y trayectos); los aporta la funcionalidad de Lugares. */
+export interface PlacesMapData {
+  vis: Record<string, number>;
+  pairs: PairStat[];
+}
+let placesData: () => PlacesMapData = () => ({ vis: {}, pairs: [] });
+export const setPlacesMapData = (fn: () => PlacesMapData) => {
+  placesData = fn;
+};
 /** Modo ubicación: lugar que se está colocando o moviendo. */
 export interface LocState {
   id: string;
@@ -91,7 +95,7 @@ export function buildPlacesMap(m: MapEntry) {
     const ll = e.lngLat.wrap();
     locState.cur.lat = ll.lat;
     locState.cur.lng = ll.lng;
-    render();
+    requestRender();
   });
   map.on('load', () => {
     if (m.dead || m.state !== 'pending') return;
@@ -234,8 +238,7 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
   const layer = S.ui.placesLayer || 'lugares',
     selP = S.places.find((p) => p.id === S.ui.selPlace),
     nsel = selP ? norm(selP.name) : null;
-  const vis = placeVisits(),
-    pairs = pairStats(),
+  const { vis, pairs } = placesData(),
     selPair = pairs.find((p) => p.key === S.ui.selPair);
   const rel = (t: Trip) => !!nsel && (norm(t.origin) === nsel || norm(t.destination) === nsel);
   const withPts = S.trips.filter((t) => Array.isArray(t.points) && t.points.length >= 2);
@@ -391,55 +394,4 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
         });
     m.fitKey = fk;
   }
-}
-export function startLocate(id: string) {
-  const p = S.places.find((x) => x.id === id),
-    m = MapReg.find((x) => x.kind === 'places');
-  if (!p) return;
-  if (!m || m.state === 'failed') {
-    toast('El mapa no está disponible sin conexión', 'err');
-    return;
-  }
-  const has = validGeo(p.lat, p.lng);
-  locState.cur = { id, lat: has ? p.lat : null, lng: has ? p.lng : null };
-  render();
-  if (has && m.map)
-    m.map.easeTo({
-      center: [p.lng as number, p.lat as number],
-      duration: reduceMotion() ? 0 : 400,
-    });
-}
-export function cancelLocate() {
-  if (!locState.cur) return;
-  locState.cur = null;
-  render();
-}
-/* Guarda la ubicación: x/y del SVG pasan a calcularse desde lat/lng y se regeneran las rutas automáticas que usan el lugar */
-export function saveLocation() {
-  const cur = locState.cur;
-  const p = cur && S.places.find((x) => x.id === cur.id);
-  if (!p || !cur || !validGeo(cur.lat, cur.lng)) {
-    cancelLocate();
-    return;
-  }
-  p.lat = +(cur.lat as number).toFixed(6);
-  p.lng = +(cur.lng as number).toFixed(6);
-  delete p.x;
-  delete p.y;
-  const n = norm(p.name);
-  let k = 0;
-  S.trips.forEach((t) => {
-    if (t.pointsSource === 'auto' && (norm(t.origin) === n || norm(t.destination) === n)) {
-      t.points = tripPoints(t, S.places);
-      k++;
-    }
-  });
-  locState.cur = null;
-  save();
-  render();
-  toast(
-    k
-      ? `Ubicación guardada · ${k} ${k === 1 ? 'ruta actualizada' : 'rutas actualizadas'}`
-      : 'Ubicación guardada',
-  );
 }

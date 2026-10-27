@@ -3,6 +3,8 @@ import type { PairStat, Place } from '@/data/schema';
 import { S } from '@/data/store';
 import { tripDur, tripKm } from '@/features/trips/trips.calc';
 import { placePos, placeXY, type XY } from '@/maps/svg';
+import type { ComboOption } from '@/shared/ui/combo';
+import { kindIcon } from '@/shared/ui/icons';
 import { hashStr } from '@/shared/utils/math';
 import { norm } from '@/shared/utils/norm';
 
@@ -84,3 +86,14 @@ export const tripsOf = (p: Place) => {
   return S.trips.filter((t) => norm(t.origin) === n || norm(t.destination) === n);
 };
 export const nTrips = (n: number) => `${n} ${n === 1 ? 'viaje' : 'viajes'}`;
+/** Opciones del autocompletado de lugares: los más visitados primero. */
+export const placeOpts = (): ComboOption[] => {
+  const vis = placeVisits();
+  return [...S.places]
+    .sort((a, b) => (vis[b.id] || 0) - (vis[a.id] || 0))
+    .map((p) => ({
+      label: p.name,
+      meta: [p.area, vis[p.id] ? `${vis[p.id]} visitas` : ''].filter(Boolean).join(' · '),
+      icon: kindIcon(p.kind),
+    }));
+};

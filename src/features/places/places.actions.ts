@@ -1,106 +1,151 @@
-import { S } from '@/data/store';
-import { $$ } from '@/shared/ui/dom';
-import { icon } from '@/shared/ui/icons';
+/** Acciones de la pantalla Lugares: selección, menú ⋮, alta, edición, eliminación y fusión. */
+import { S, updateUi } from '@/data/store';
+import { locState, setPlacesMapData } from '@/maps/placesMap';
+import { registerClick, registerSubmit } from '@/shared/ui/actions';
+import { req } from '@/shared/ui/dom';
+import { chooseDialog, confirmDialog, type ChoiceOption } from '@/shared/ui/modal';
 import { toast } from '@/shared/ui/toast';
-import { validGeo } from '@/shared/utils/geo';
+import { norm } from '@/shared/utils/norm';
+import { nTrips, pairStats, placeVisits, tripsOf } from './places.calc';
+import { mergeDialog, openPlacePanel } from './places.form';
+import { cancelLocate, saveLocation, startLocate } from './places.locate';
+import { placesRepo } from './places.repo';
+import { closePlaceMenu, showUndo, togglePlaceMenu } from './places.ui';
+import type { PlaceUndo } from './places.repo';
+import type { Place } from '@/data/schema';
 
-/** Estado de la interfaz de Lugares que vive fuera del DOM: menú ⋮ abierto y aviso de deshacer. */
-export const placeUi: {
-  menu: { btn: HTMLElement; el: HTMLElement } | null;
-  undo: { el: HTMLElement; fn: () => void } | null;
-} = { menu: null, undo: null };
-/* ---- Menú de acciones por lugar ---- */
-export function closePlaceMenu(restore?: boolean) {
-  if (!placeUi.menu) return;
-  const { btn, el } = placeUi.menu;
-  placeUi.menu = null;
-  el.remove();
-  if (document.contains(btn)) {
-    btn.setAttribute('aria-expanded', 'false');
-    if (restore) btn.focus({ preventScroll: true });
-  }
+/* El mapa de lugares pide las visitas y los trayectos a esta funcionalidad */
+setPlacesMapData(() => ({ vis: placeVisits(), pairs: pairStats() }));
+
+/** Muestra el aviso «Deshacer» de un lugar eliminado o fusionado. */
+function offerUndo(msg: string, u: PlaceUndo, name: string) {
+  showUndo(msg, () => {
+    if (!u.undo()) toast(`No se pudo deshacer: ya existe un lugar «${name}»`, 'err');
+    else toast('Cambios deshechos');
+  });
 }
-export function togglePlaceMenu(btn: HTMLElement) {
-  if (placeUi.menu && placeUi.menu.btn === btn) {
-    closePlaceMenu(true);
+function removePlace(p: Place, msg: string) {
+  if (locState.cur && locState.cur.id === p.id) locState.cur = null;
+  const u = placesRepo.remove(p.id);
+  if (u) offerUndo(msg, u, p.name);
+}
+async function mergePlace(srcId: string) {
+  const src = placesRepo.get(srcId);
+  if (!src) return;
+  const dstId = await mergeDialog(src),
+    dst = dstId && placesRepo.get(dstId);
+  if (!dst || !placesRepo.list().includes(src)) return;
+  if (locState.cur && locState.cur.id === src.id) locState.cur = null;
+  const r = placesRepo.merge(src.id, dst.id);
+  if (r)
+    offerUndo(
+      `«${src.name}» fusionado con «${dst.name}»${r.moved ? ` · ${nTrips(r.moved)}` : ''}`,
+      r,
+      src.name,
+    );
+}
+async function deletePlace(id: string) {
+  const p = placesRepo.get(id);
+  if (!p) return;
+  const n = tripsOf(p).length;
+  if (!n) {
+    if (
+      !(await confirmDialog({
+        title: `¿Eliminar «${p.name}»?`,
+        body: 'No tiene viajes asociados. Podrás deshacerlo durante unos segundos.',
+        ok: 'Eliminar lugar',
+      }))
+    )
+      return;
+    removePlace(p, `Lugar «${p.name}» eliminado`);
     return;
   }
-  closePlaceMenu();
-  const p = S.places.find((x) => x.id === btn.dataset.id);
-  if (!p) return;
-  const items: [string, string, string][] = [
-    ['place-edit', 'edit', 'Editar'],
-    ['locate-start', 'pin', validGeo(p.lat, p.lng) ? 'Mover ubicación' : 'Ubicar en el mapa'],
-  ];
-  if (S.places.length > 1) items.push(['place-merge', 'swapH', 'Fusionar con…']);
-  items.push(['place-delete', 'trash', 'Eliminar']);
-  const el = document.createElement('div');
-  el.className = 'menu pmenu';
-  el.setAttribute('role', 'menu');
-  el.setAttribute('aria-label', `Acciones de ${p.name}`);
-  el.innerHTML = items
-    .map(
-      ([a, ic, l]) =>
-        `<button type="button" class="menu-item${a === 'place-delete' ? ' danger' : ''}" role="menuitem" data-action="${a}" data-id="${p.id}"><span class="mi-ico">${icon(ic, 16)}</span><span>${l}</span></button>`,
-    )
-    .join('');
-  btn.closest('li')!.appendChild(el);
-  btn.setAttribute('aria-expanded', 'true');
-  const r = el.getBoundingClientRect();
-  if (r.bottom > innerHeight - 8 && btn.getBoundingClientRect().top > r.height + 16)
-    el.classList.add('up');
-  placeUi.menu = { btn, el };
-  el.querySelector<HTMLElement>('[role=menuitem]')!.focus();
-  el.addEventListener('keydown', (e) => {
-    const its = $$('[role=menuitem]', el),
-      i = its.indexOf(document.activeElement as HTMLElement);
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      its[(i + 1) % its.length].focus();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      its[(i - 1 + its.length) % its.length].focus();
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      its[0].focus();
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      its[its.length - 1].focus();
-    } else if (e.key === 'Tab') closePlaceMenu(!e.shiftKey);
-  });
-}
-document.addEventListener('click', (e) => {
-  if (placeUi.menu && !(e.target as HTMLElement).closest('.pmenu,[data-action=place-more]'))
-    closePlaceMenu();
-});
-/* ---- Deshacer ---- */
-export function showUndo(msg: string, fn: () => void) {
-  clearUndo();
-  const el = toast(msg, 'ok', {
-    ms: 6000,
-    action: {
-      label: 'Deshacer',
-      fn: () => {
-        placeUi.undo = null;
-        fn();
-      },
+  const opts: ChoiceOption<'keep' | 'merge'>[] = [
+    {
+      value: 'keep',
+      title: 'Conservar los viajes',
+      lines: [
+        `${n === 1 ? 'El viaje mantiene' : `Los ${n} viajes mantienen`} su texto y su ruta.`,
+        'El lugar desaparece de la lista y del mapa.',
+      ],
     },
+  ];
+  if (S.places.length > 1)
+    opts.push({
+      value: 'merge',
+      title: 'Fusionar con otro lugar',
+      lines: [
+        `${n === 1 ? 'El viaje pasa' : `Los ${n} viajes pasan`} a usar otro lugar y sus rutas automáticas se ajustan.`,
+      ],
+    });
+  const c = await chooseDialog({
+    title: `«${p.name}» tiene ${nTrips(n)}`,
+    body: 'Nunca se borran viajes. Elige qué hacer con ellos.',
+    options: opts,
+    cancel: 'Cancelar',
   });
-  placeUi.undo = { el, fn };
-  setTimeout(() => {
-    if (placeUi.undo && placeUi.undo.el === el) placeUi.undo = null;
-  }, 6000);
+  if (c === 'keep') removePlace(p, `Lugar «${p.name}» eliminado · ${nTrips(n)} conservados`);
+  else if (c === 'merge') mergePlace(id);
 }
-function clearUndo() {
-  if (placeUi.undo) {
-    placeUi.undo.el.remove();
-    placeUi.undo = null;
-  }
-}
-export function runUndo() {
-  if (!placeUi.undo) return;
-  const { el, fn } = placeUi.undo;
-  placeUi.undo = null;
-  el.remove();
-  fn();
-}
+
+registerClick({
+  'place-more': (el) => togglePlaceMenu(el),
+  'place-edit': (el) => {
+    const p = placesRepo.get(el.dataset.id!);
+    closePlaceMenu(true);
+    if (p) openPlacePanel(p);
+  },
+  'place-merge': (el) => {
+    closePlaceMenu(true);
+    mergePlace(el.dataset.id!);
+  },
+  'place-delete': (el) => {
+    closePlaceMenu(true);
+    deletePlace(el.dataset.id!);
+  },
+  'place-select': (el, e) => {
+    const id = el.dataset.id!;
+    updateUi({ selPlace: S.ui.selPlace === id ? null : id, selPair: null }, { persist: false });
+    const f =
+      document.getElementById('pl-' + id) && (e.target as HTMLElement).closest('.row-btn')
+        ? document.getElementById('pl-' + id)
+        : document.getElementById('mpin-' + id) || document.getElementById('pin-' + id);
+    f?.focus({ preventScroll: true });
+  },
+  'places-layer': (el) => {
+    updateUi({ placesLayer: el.dataset.layer as 'lugares' | 'rutas' | 'calor' });
+    document.getElementById('lyr-' + el.dataset.layer)?.focus({ preventScroll: true });
+  },
+  'locate-start': (el) => {
+    closePlaceMenu(true);
+    startLocate(el.dataset.id!);
+  },
+  'locate-save': () => saveLocation(),
+  'locate-cancel': () => cancelLocate(),
+  'pair-select': (el) => {
+    updateUi(
+      { selPair: S.ui.selPair === el.dataset.key ? null : el.dataset.key! },
+      { persist: false },
+    );
+    document.getElementById(el.id)?.focus({ preventScroll: true });
+  },
+  'clear-place': () => updateUi({ selPlace: null, selPair: null }, { persist: false }),
+});
+registerSubmit({
+  addPlaceForm: (f) => {
+    const n = req<HTMLInputElement>('#plName', f).value.trim().replace(/\s+/g, ' '),
+      ar = req<HTMLInputElement>('#plArea', f).value.trim();
+    if (!n) {
+      req('#plName', f).focus();
+      return;
+    }
+    if (placesRepo.list().some((p) => norm(p.name) === norm(n))) {
+      toast('Ese lugar ya existe', 'err');
+      return;
+    }
+    const loc = !!f.querySelector<HTMLInputElement>('#plLocate')?.checked;
+    const np = placesRepo.create({ name: n, area: ar });
+    toast('Lugar agregado');
+    if (loc) startLocate(np.id); /* ofrece ubicarlo de inmediato */
+  },
+});

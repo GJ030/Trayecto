@@ -1,7 +1,7 @@
-import { render } from '@/app/nav';
 import type { Place } from '@/data/schema';
-import { S, save } from '@/data/store';
+import { S } from '@/data/store';
 import { KINDS, nTrips, placeVisits, tripsOf } from './places.calc';
+import { placesRepo } from './places.repo';
 import { setErr } from '@/shared/ui/combo';
 import { $$, req } from '@/shared/ui/dom';
 import { closeDrawer, drawerFoot, drawerHead, guardChanges, openDrawer } from '@/shared/ui/drawer';
@@ -12,16 +12,6 @@ import { esc } from '@/shared/utils/format';
 import { validGeo } from '@/shared/utils/geo';
 import { norm } from '@/shared/utils/norm';
 
-export const placeOpts = () => {
-  const vis = placeVisits();
-  return [...S.places]
-    .sort((a, b) => (vis[b.id] || 0) - (vis[a.id] || 0))
-    .map((p) => ({
-      label: p.name,
-      meta: [p.area, vis[p.id] ? `${vis[p.id]} visitas` : ''].filter(Boolean).join(' · '),
-      icon: kindIcon(p.kind),
-    }));
-};
 /* ---- Editar ---- */
 export function openPlacePanel(p: Place) {
   const cur = KINDS.some((k) => k[0] === p.kind) ? p.kind : 'other';
@@ -76,33 +66,7 @@ function savePlace(f: HTMLFormElement, p: Place) {
     req('#pName', f).focus();
     return;
   }
-  const old = p.name,
-    on = norm(old);
-  let k = 0;
-  if (name !== old) {
-    S.trips.forEach((t) => {
-      let ch = false;
-      if (norm(t.origin) === on) {
-        t.origin = name;
-        ch = true;
-      }
-      if (norm(t.destination) === on) {
-        t.destination = name;
-        ch = true;
-      }
-      if (ch) k++;
-    });
-    if (S.ui.selPair)
-      S.ui.selPair = S.ui.selPair
-        .split('→')
-        .map((x) => (x === on ? norm(name) : x))
-        .join('→'); /* el trayecto seleccionado sigue siendo el mismo */
-  }
-  p.name = name;
-  p.area = area;
-  p.kind = kind;
-  save();
-  render();
+  const k = placesRepo.update(p.id, { name, area, kind });
   closeDrawer();
   toast(k ? `Lugar actualizado · ${nTrips(k)} con el nombre nuevo` : 'Lugar actualizado');
 }

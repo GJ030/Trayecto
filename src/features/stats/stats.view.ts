@@ -1,7 +1,8 @@
 import { S } from '@/data/store';
 import { D, cpkOf, fuelTotal } from '@/features/fuel/fuel.calc';
 import { tripCost, tripDur, tripKm } from '@/features/trips/trips.calc';
-import { compAccHTML } from '@/features/vehicles/vehicles.calc';
+import { compAccuracy } from '@/features/trips/trips.calc';
+import { compAccHTML } from '@/shared/ui/blocks';
 import { emptyState, quickBtns } from '@/shared/ui/blocks';
 import { barChart, lineChart } from '@/shared/ui/charts';
 import { icon, tagHTML } from '@/shared/ui/icons';
@@ -147,7 +148,7 @@ export function renderEstadisticas() {
     };
   });
   const tkm = Math.max(1e-9, tags[0].km + tags[1].km);
-  const accs = S.vehicles.map((v) => compAccHTML(v.id, true)).filter(Boolean);
+  const accs = S.vehicles.map((v) => compAccHTML(compAccuracy(v.id), v, true)).filter(Boolean);
   const accCard = accs.length
     ? `<section class="card span-12"><div class="card-title"><span>Precisión de la computadora</span><span class="muted-sm">Rendimiento capturado vs. real con tanque lleno</span></div><div class="acc-list">${accs.join('')}</div></section>`
     : '';

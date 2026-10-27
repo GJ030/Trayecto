@@ -1,10 +1,12 @@
 /** Cálculos de un viaje: distancia, duración, velocidad, litros y costo. */
-import type { SortKey, Trip } from '@/data/schema';
+import { tripKey, type Fuel, type SortKey, type Trip } from '@/data/schema';
 import { S } from '@/data/store';
-import { kmplOf, priceOf } from '@/features/fuel/fuel.calc';
+import { D, kmplOf, priceOf } from '@/features/fuel/fuel.calc';
 import { vehName } from '@/features/vehicles/vehicles.calc';
+import type { CompAccuracy } from '@/shared/ui/blocks';
 import { fmtDate, toMin } from '@/shared/utils/dates';
 import { NF1 } from '@/shared/utils/format';
+import { mean } from '@/shared/utils/math';
 import { norm } from '@/shared/utils/norm';
 
 /** Duración en minutos; si la llegada es anterior a la salida, el viaje cruza la medianoche. */
@@ -19,7 +21,6 @@ export const tripSpeed = (t: Trip) => {
   const m = tripDur(t);
   return m ? tripKm(t) / (m / 60) : 0;
 };
-export const tripKey = (t: Pick<Trip, 'date' | 'depart'>) => t.date + ' ' + t.depart;
 export const tripsDesc = () => [...S.trips].sort((a, b) => tripKey(b).localeCompare(tripKey(a)));
 /* Con rendimiento de la computadora el viaje usa ese valor; sin él, el promedio del vehículo */
 export const compOf = (t: Pick<Trip, 'computerKmpl'>) =>
@@ -69,4 +70,23 @@ export function filteredTrips() {
       y = val(b);
     return (x > y ? 1 : x < y ? -1 : 0) * m;
   });
+}
+/* Precisión de la computadora de un vehículo: promedio de los rendimientos capturados contra el real de las cargas de tanque lleno cuyo intervalo
+   (desde la carga llena anterior) toca el periodo de esos viajes. Requiere ≥3 viajes con dato y al menos una carga con rendimiento calculado */
+export function compAccuracy(vid: string): CompAccuracy | null {
+  const tr = S.trips.filter((t) => t.vehicleId === vid && compOf(t));
+  if (tr.length < 3) return null;
+  const from = tr.reduce((m, t) => (t.date < m ? t.date : m), tr[0].date),
+    to = tr.reduce((m, t) => (t.date > m ? t.date : m), tr[0].date);
+  const real: number[] = [];
+  let prev: Fuel | null = null;
+  for (const f of D.vs[vid]?.loads || []) {
+    if (!f.full) continue;
+    if (prev && D.kmpl[f.id] != null && f.date >= from && prev.date <= to) real.push(D.kmpl[f.id]);
+    prev = f;
+  }
+  if (!real.length) return null;
+  const comp = mean(tr.map((t) => compOf(t) as number)),
+    r = mean(real);
+  return { n: tr.length, loads: real.length, comp, real: r, pct: ((comp - r) / r) * 100, from, to };
 }

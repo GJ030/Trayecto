@@ -1,16 +1,12 @@
 /** Archivo de datos local (File System Access API). */
-import { go, render } from '@/app/nav';
 import { parseBackup, type BackupData, type BackupFile } from '@/data/schema';
 import { idbDel, idbGet, idbSet } from './idb';
 import { Store } from './local';
-import { S, adoptData, backupPayload, setAfterSave, snapshot } from '@/data/store';
-import { applyChrome } from '@/shared/ui/chrome';
-import { req } from '@/shared/ui/dom';
-import { icon } from '@/shared/ui/icons';
+import { S, adoptData, backupPayload, emitChange, setAfterSave, snapshot } from '@/data/store';
 import { chooseDialog, confirmDialog } from '@/shared/ui/modal';
 import { toast } from '@/shared/ui/toast';
 import { isoDate } from '@/shared/utils/dates';
-import { esc, fmtHM, fmtWhen } from '@/shared/utils/format';
+import { fmtHM, fmtWhen } from '@/shared/utils/format';
 
 /* Persistencia en un archivo real con la File System Access API (Chrome/Edge). localStorage sigue siendo la caché: save() escribe ahí al instante
    y el archivo (trayecto-datos.json, mismo formato que el respaldo JSON v2) se escribe ~800 ms después, agrupando cambios.
@@ -232,74 +228,10 @@ export function fsInfo(): { label: string; tone: string; tip: string } {
       };
   }
 }
-const FS_NOTICES: Partial<
-  Record<FsState, () => { msg: string; btns: [string, string, number?][] }>
-> = {
-  off: () => ({
-    msg: `Reconectar carpeta de datos: el navegador necesita tu permiso para volver a usar «${FS.handle!.name}». Mientras tanto se usa la caché.`,
-    btns: [['fs-reconnect', 'Reconectar', 1]],
-  }),
-  missing: () => ({
-    msg: `La carpeta de datos «${FS.handle!.name}» ya no existe o no se puede abrir. Tus datos siguen en la caché del navegador.`,
-    btns: [
-      ['fs-pick', 'Elegir otra carpeta', 1],
-      ['fs-resolve', 'Reintentar'],
-    ],
-  }),
-  nofile: () => ({
-    msg: `No se encontró ${FS_FILE} en «${FS.handle!.name}». Tus datos siguen en la caché del navegador.`,
-    btns: [
-      ['fs-pick', 'Elegir otra carpeta', 1],
-      ['fs-create', 'Crear el archivo aquí'],
-    ],
-  }),
-  invalid: () => ({
-    msg: `${FS_FILE} no es válido (${FS.detail}). No se tocará hasta que decidas.`,
-    btns: [
-      ['fs-pick', 'Elegir otra carpeta', 1],
-      ['fs-replace', 'Reemplazar con mis datos'],
-    ],
-  }),
-  conflict: () => ({
-    msg: `${FS_FILE} cambió por fuera y falta decidir qué versión conservar. Mientras tanto no se escribe nada.`,
-    btns: [['fs-resolve', 'Elegir versión', 1]],
-  }),
-};
-let fsSig = '';
-export function paintStatusBtn() {
-  const info = fsInfo(),
-    el = req('#fsStatus');
-  el.hidden = !FS.supported;
-  el.dataset.tone = info.tone;
-  req('.fs-label', el).textContent = info.label;
-  el.dataset.tip = `${info.label} — ${info.tip}`; /* menú contraído: lo muestra el tooltip propio */
-  if (S.ui.collapsed) el.removeAttribute('title');
-  else el.title = info.tip;
-}
-export function paintFS() {
-  paintStatusBtn();
-  const nt = req('#fsNotice');
-  {
-    const make = FS_NOTICES[FS.state];
-    const spec = FS.handle && make ? make() : null;
-    nt.hidden = !spec;
-    nt.innerHTML = spec
-      ? `${icon('alert', 16)}<span>${esc(spec.msg)}</span>${spec.btns.map(([a, l, p]) => `<button type="button" class="btn sm${p ? ' btn-primary' : ''}" data-action="${a}">${esc(l)}</button>`).join('')}`
-      : '';
-  }
-  const sig = [
-    FS.state,
-    FS.detail,
-    FS.handle ? FS.handle.name : '',
-    FS.backups.count,
-    FS.backups.last,
-    FS.savedAt ? +FS.savedAt : '',
-  ].join('|');
-  if (sig !== fsSig) {
-    fsSig = sig;
-    if (S.ui.view === 'respaldo' || S.ui.view === 'ajustes') render();
-  }
-}
+/** Quien pinta el estado del archivo (indicador, aviso y tarjeta) se suscribe aquí. */
+const fsListeners = new Set<() => void>();
+export const onFsChange = (fn: () => void) => fsListeners.add(fn);
+export const notifyFs = () => fsListeners.forEach((fn) => fn());
 function setState(state: FsState, detail?: string) {
   const was = FS.state;
   FS.state = state;
@@ -307,7 +239,7 @@ function setState(state: FsState, detail?: string) {
   FS.hold = FS_HOLD.includes(state) ? state : null;
   if (state === 'error' && was !== 'error')
     toast(FS.detail || 'Error al guardar el archivo', 'err');
-  paintFS();
+  notifyFs();
 }
 /* ---- Respaldos diarios ---- */
 const BK_RE = /^trayecto-\d{4}-\d{2}-\d{2}\.json$/;
@@ -507,8 +439,7 @@ function applyFile(cur: FsRead) {
   FS.meta.modified = new Date(cur.mod).toISOString();
   saveMeta();
   FS.rawKey = JSON.stringify(snapshot());
-  applyChrome();
-  render();
+  emitChange(['all', 'chrome'], false);
   setState('ok');
 }
 /* ---- Conexión ---- */
@@ -656,7 +587,7 @@ export async function linkFolder(dir: FileSystemDirectoryHandle) {
     await flush();
   }
   await refreshBackups();
-  paintFS();
+  notifyFs();
   toast(`Carpeta de datos: ${dir.name}`);
   return true;
 }
@@ -675,7 +606,7 @@ async function pickFolder() {
   }
   await linkFolder(dir);
 }
-async function reconnectFS() {
+export async function reconnectFS() {
   if (!FS.handle) return;
   let p: PermissionState;
   try {
@@ -744,7 +675,7 @@ export async function initFS() {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   } catch (e) {} /* reduce el riesgo de que el navegador borre la caché por falta de espacio */
   if (!FS.supported) {
-    paintFS();
+    notifyFs();
     return;
   }
   FS.rawKey = JSON.stringify(snapshot());
@@ -773,12 +704,4 @@ window.addEventListener('pagehide', flushPending);
 window.addEventListener('beforeunload', flushPending);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushPending();
-});
-req('#fsNotice').addEventListener('click', (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
-  if (b) fsAction(b.dataset.action!);
-});
-req('#fsStatus').addEventListener('click', () => {
-  if (FS.state === 'off') reconnectFS();
-  else go('respaldo');
 });
