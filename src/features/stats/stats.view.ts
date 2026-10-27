@@ -1,9 +1,7 @@
 import { S } from '@/data/store';
 import { D, cpkOf, fuelTotal } from '@/features/fuel/fuel.calc';
-import { tripCost, tripDur, tripKm } from '@/features/trips/trips.calc';
-import { compAccuracy } from '@/features/trips/trips.calc';
-import { compAccHTML } from '@/shared/ui/blocks';
-import { emptyState, quickBtns } from '@/shared/ui/blocks';
+import { compAccuracy, tripCost, tripDur, tripKm } from '@/features/trips/trips.calc';
+import { compAccHTML, emptyState, quickBtns } from '@/shared/ui/blocks';
 import { barChart, lineChart } from '@/shared/ui/charts';
 import { icon, tagHTML } from '@/shared/ui/icons';
 import { lastMonths } from '@/shared/utils/dates';

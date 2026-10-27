@@ -1,9 +1,7 @@
 import { S } from '@/data/store';
 import { D, cpkOf } from '@/features/fuel/fuel.calc';
-import { tripKm } from '@/features/trips/trips.calc';
-import { compAccuracy } from '@/features/trips/trips.calc';
-import { compAccHTML } from '@/shared/ui/blocks';
-import { emptyState } from '@/shared/ui/blocks';
+import { compAccuracy, tripKm } from '@/features/trips/trips.calc';
+import { compAccHTML, emptyState } from '@/shared/ui/blocks';
 import { icon } from '@/shared/ui/icons';
 import { MXN, NF0, NF1, esc } from '@/shared/utils/format';
 import { sum } from '@/shared/utils/math';
