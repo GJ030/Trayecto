@@ -80,6 +80,8 @@ export interface RouteLine {
 }
 /** 'ok' = ruta calculada; 'pending' = no se pudo calcular (se dibuja la recta punteada y se reintenta). */
 export const ROUTE_STATUSES = ['ok', 'pending'] as const;
+export const ROUTE_ERRORS = ['noroute', 'invalid'] as const;
+export type RouteError = (typeof ROUTE_ERRORS)[number];
 export type RouteStatus = (typeof ROUTE_STATUSES)[number];
 /**
  * Ruta por calles reales de un viaje. La geometría solo se guarda en el archivo de datos (y sus copias):
@@ -96,6 +98,8 @@ export interface TripRoute {
   /** Número de vértices de la geometría (para compararla sin cargarla). */
   n: number;
   geometry?: RouteLine;
+  /** Solo con `status: 'pending'`: falló de forma que no se reintenta sola (hay que reintentar a mano). */
+  error?: RouteError;
 }
 export interface Trip {
   id: string;
@@ -357,6 +361,9 @@ export function cleanRoute(r: Raw, strict: boolean): TripRoute | null {
         ? r.n
         : 0,
     ...(keep ? { geometry } : {}),
+    ...(status === 'pending' && r.status === 'pending' && ROUTE_ERRORS.includes(r.error)
+      ? { error: r.error as RouteError }
+      : {}),
   };
 }
 /**

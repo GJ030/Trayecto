@@ -6,10 +6,15 @@ import { registerChange, registerClick } from '@/shared/ui/actions';
 import { confirmDialog } from '@/shared/ui/modal';
 import { toast } from '@/shared/ui/toast';
 import { settingsRepo } from './settings.repo';
+import { retryRouteErrors, startRoutes, stopRoutes, toggleRouting } from './settings.routing';
 
 registerClick({
   'set-tag': (el) => settingsRepo.setDefaultTag(el.dataset.tag as Tag),
   'toggle-hints': () => settingsRepo.toggleHints(),
+  'toggle-routing': () => toggleRouting(),
+  'rt-start': () => startRoutes(),
+  'rt-stop': () => stopRoutes(),
+  'rt-retry-errors': () => retryRouteErrors(),
   'toggle-collapse': () => updateUi({ collapsed: !S.ui.collapsed }, { chrome: true }),
   'reset-demo': async () => {
     if (

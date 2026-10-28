@@ -29,7 +29,18 @@ import { startShell } from '@/app/shell';
 import '@/app/sync';
 import '@/app/events';
 import '@/app/shortcuts';
-import { FS, initFS, linkFolder, openLinked, refreshBackups, tick } from '@/data/storage/file';
+import { ROUTING } from '@/data/routing';
+import { routingQueue, setRoutingGuard, startRoutingQueue } from '@/data/routingQueue';
+import {
+  FS,
+  fsWritable,
+  initFS,
+  linkFolder,
+  onFsChange,
+  openLinked,
+  refreshBackups,
+  tick,
+} from '@/data/storage/file';
 import { S } from '@/data/store';
 import '@/features/backup/backup.actions';
 import '@/features/dashboard/dashboard.actions';
@@ -37,6 +48,7 @@ import '@/features/fuel/fuel.actions';
 import { openFuelPanel } from '@/features/fuel/fuel.form';
 import '@/features/places/places.actions';
 import '@/features/settings/settings.actions';
+import { paintRoutingCard } from '@/features/settings/settings.routing';
 import '@/features/stats/stats.actions';
 import '@/features/trips/trips.actions';
 import { openTripPanel } from '@/features/trips/trips.form';
@@ -45,6 +57,12 @@ import { locState } from '@/maps/placesMap';
 import { Play } from '@/maps/play';
 import { MapReg } from '@/maps/registry';
 
+setRoutingGuard(fsWritable);
+startRoutingQueue();
+onFsChange(() => {
+  routingQueue.kick(); /* la carpeta volvió a estar disponible: sigue sola */
+  paintRoutingCard();
+});
 startShell();
 render(true);
 paintFS();
@@ -66,6 +84,7 @@ window.__trayecto = {
   get loc() {
     return locState.cur;
   },
+  routing: { config: ROUTING, queue: routingQueue },
   render,
   go,
   openTripPanel,

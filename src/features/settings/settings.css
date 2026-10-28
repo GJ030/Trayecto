@@ -44,3 +44,45 @@
   justify-content: space-between;
   color: var(--text-2);
 }
+
+.rt-why {
+  color: var(--accent);
+}
+.rt-why[hidden] {
+  display: none;
+}
+.rt-live:empty {
+  display: none;
+}
+.rt-live {
+  padding: 4px 0 2px;
+}
+.rt-line {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.rt-bar {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  margin-top: 10px;
+  overflow: hidden;
+}
+.rt-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+.rt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.switch-bare:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

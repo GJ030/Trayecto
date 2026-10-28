@@ -58,6 +58,10 @@ export const hasRealRoute = (t: Pick<Trip, 'pointsSource' | 'route'>) => {
   return k === 'geometry' || k === 'imported';
 };
 
+/** ¿Hay que pedir su ruta? Viaje de la app con ruta «pendiente» que no falló de forma definitiva. */
+export const needsRoute = (t: Pick<Trip, 'pointsSource' | 'route'>) =>
+  t.pointsSource === 'auto' && t.route?.status === 'pending' && !t.route.error;
+
 /** Datos de un viaje que definen su ruta calculada (el resto del viaje no la afecta). */
 type RouteHolder = Pick<Trip, 'origin' | 'destination' | 'pointsSource'> &
   Partial<Pick<Trip, 'waypoints' | 'route'>>;

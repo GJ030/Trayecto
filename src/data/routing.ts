@@ -18,6 +18,15 @@ export const ROUTING = {
   minIntervalMs: 1000,
   timeoutMs: 15000,
   attribution: 'Rutas: OSRM · © OpenStreetMap contributors',
+  /** Espera creciente (duplica en cada fallo) ante fallos recuperables: sin conexión, tiempo agotado, HTTP 429 o 5xx. */
+  retry: {
+    baseMs: 5000,
+    /** HTTP 429 (exceso de peticiones): se espera más. */
+    rateLimitBaseMs: 30000,
+    maxMs: 300000,
+    /** Tras tantos fallos seguidos la cola se detiene y espera a que vuelva la conexión o a que se lance a mano. */
+    maxStreak: 6,
+  },
   maxWaypoints: MAX_WAYPOINTS,
 };
 /** Servidor al que se envían las coordenadas (para el texto de privacidad). */

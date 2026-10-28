@@ -14,6 +14,10 @@ export const settingsRepo = {
   },
 
   /* ---- Operaciones propias ---- */
+  /** «Rutas por calles reales (usa OSRM)»: preferencia de este equipo; solo con ella activa se envían coordenadas al servicio. */
+  setRouting(on: boolean) {
+    this.update({ routing: on });
+  },
   setDefaultTag(tag: Settings['defaultTag']) {
     this.update({ defaultTag: tag });
   },

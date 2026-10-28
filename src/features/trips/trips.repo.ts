@@ -3,10 +3,13 @@
  * Valida con data/schema.ts, aplica las cascadas y emite el evento de cambio.
  */
 import { syncRoute, tripPoints } from '@/data/routes';
+import { setRouteSink } from '@/data/routingQueue';
+import type { RouteResult } from '@/data/routing';
 import {
   ValidationError,
   checkTrip,
   cleanComputer,
+  type RouteError,
   type RoutePoint,
   type Trip,
   type TripInput,
@@ -184,6 +187,52 @@ export const tripsRepo = {
     });
     if (changed.length) emitChange('trips');
   },
+  /* ---- Rutas por calles reales (las usa la cola de data/routingQueue) ---- */
+  /** Guarda la ruta calculada de un viaje si sigue pendiente y con la misma huella (si se editó mientras tanto, se descarta). */
+  applyRoute(id: string, sig: string, r: RouteResult): boolean {
+    const t = S.trips.find((x) => x.id === id);
+    if (!t || t.pointsSource !== 'auto' || t.route?.status !== 'pending' || t.route.sig !== sig)
+      return false;
+    t.route = {
+      status: 'ok',
+      sig,
+      distance: r.distance,
+      duration: r.duration,
+      n: r.geometry.coordinates.length,
+      geometry: r.geometry,
+    };
+    t.points = tripPoints(t, S.places);
+    emitChange('trips');
+    return true;
+  },
+  /** Marca una ruta pendiente como fallida de forma definitiva (no se reintenta sola). */
+  failRoute(id: string, sig: string, error: RouteError): boolean {
+    const t = S.trips.find((x) => x.id === id);
+    if (!t || t.pointsSource !== 'auto' || t.route?.status !== 'pending' || t.route.sig !== sig)
+      return false;
+    t.route = { ...t.route, error };
+    emitChange('trips');
+    return true;
+  },
+  /** Deja «pendientes» los viajes de la app con ubicación que aún no tienen ruta (al activar el ruteo). Devuelve cuántos. */
+  queueMissingRoutes(): number {
+    let k = 0;
+    for (const t of S.trips) if (!t.route && syncRoute(t, S.places, true)) k++;
+    if (k) emitChange('trips');
+    return k;
+  },
+  /** Quita la marca de error a las rutas que fallaron para que se reintenten. Devuelve cuántas. */
+  retryRouteErrors(): number {
+    let k = 0;
+    for (const t of S.trips)
+      if (t.route?.status === 'pending' && t.route.error) {
+        t.route = { ...t.route };
+        delete t.route.error;
+        k++;
+      }
+    if (k) emitChange('trips');
+    return k;
+  },
   /** Elimina todos los viajes de un vehículo. */
   removeByVehicle(vehicleId: string): number {
     const before = S.trips.length;
@@ -192,3 +241,9 @@ export const tripsRepo = {
     return before - S.trips.length;
   },
 };
+
+/* La cola de rutas (data/routingQueue) aplica sus resultados a través de este repositorio */
+setRouteSink({
+  apply: (id, sig, r) => tripsRepo.applyRoute(id, sig, r),
+  fail: (id, sig, e) => tripsRepo.failRoute(id, sig, e),
+});

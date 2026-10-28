@@ -99,6 +99,10 @@ const saveMeta = () => {
   } catch (e) {}
 };
 const canWrite = () => !!FS.handle && FS.perm === 'granted' && !FS.hold && FS.geoReady;
+/** ¿Se puede escribir ahora en la carpeta de datos? (la cola de rutas no pide nada que no se pueda guardar) */
+export const fsWritable = () => canWrite();
+/** ¿Hay una carpeta de datos enlazada y con permiso? Las rutas por calles reales se guardan allí, así que lo exigen. */
+export const fsLinked = () => FS.supported && !!FS.handle && FS.perm === 'granted';
 const hasData = (d: BackupData) =>
   d.trips.length + d.fuel.length + d.places.length + d.vehicles.length > 0;
 /* ---- Validación y lectura ---- */

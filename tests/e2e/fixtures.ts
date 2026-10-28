@@ -156,3 +156,58 @@ export function routeBackup(extraSettings: Record<string, unknown> = {}) {
     },
   });
 }
+
+/* ---- Carpeta de datos en OPFS (solo con la app servida por http://127.0.0.1: por file:// no existe) ---- */
+const DATA_FILE = 'trayecto-datos.json';
+const OPFS_DIR = 'carpeta-de-prueba';
+export const fsState = (page: Page) =>
+  page.evaluate(() => (window.__trayecto as { fs: { state: { state: string } } }).fs.state.state);
+/** Enlaza una carpeta de OPFS como carpeta de datos (el selector nativo no se puede automatizar). */
+export async function linkOpfs(page: Page) {
+  await page.evaluate(async (name) => {
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(name, { create: true });
+    const t = window.__trayecto as { fs: { link(d: FileSystemDirectoryHandle): Promise<boolean> } };
+    await t.fs.link(dir);
+  }, OPFS_DIR);
+  await expect.poll(() => fsState(page)).toBe('ok');
+}
+export const readDataFile = (page: Page) =>
+  page.evaluate(
+    async ([dir, file]) => {
+      const root = await navigator.storage.getDirectory();
+      const d = await root.getDirectoryHandle(dir);
+      return (await (await d.getFileHandle(file)).getFile()).text();
+    },
+    [OPFS_DIR, DATA_FILE],
+  );
+export const writeDataFile = (page: Page, text: string) =>
+  page.evaluate(
+    async ([dir, file, t]) => {
+      const root = await navigator.storage.getDirectory();
+      const d = await root.getDirectoryHandle(dir);
+      const w = await (await d.getFileHandle(file, { create: true })).createWritable();
+      await w.write(t);
+      await w.close();
+    },
+    [OPFS_DIR, DATA_FILE, text],
+  );
+export const removeDataFile = (page: Page) =>
+  page.evaluate(
+    async ([dir, file]) => {
+      const root = await navigator.storage.getDirectory();
+      await (await root.getDirectoryHandle(dir)).removeEntry(file);
+    },
+    [OPFS_DIR, DATA_FILE],
+  );
+/** Importa un respaldo por la pantalla de Respaldo y espera el aviso. */
+export async function importBackup(page: Page, text: string) {
+  await goTo(page, 'respaldo', 'Respaldo');
+  await page.setInputFiles('#importFile', {
+    name: 'respaldo.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(text),
+  });
+  await confirmModal(page);
+  await expect(page.locator('#toasts')).toContainText('Respaldo importado');
+}

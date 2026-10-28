@@ -2,68 +2,20 @@ import type { Page } from '@playwright/test';
 import {
   LINE,
   SIG_TA,
-  confirmModal,
   expect,
+  fsState,
   getState,
   getStored,
   goTo,
+  importBackup,
+  linkOpfs,
+  readDataFile as readFile,
+  removeDataFile as removeFile,
   routeBackup,
   test,
+  writeDataFile as writeFile,
 } from './fixtures';
 
-const FILE = 'trayecto-datos.json';
-const DIR = 'carpeta-de-prueba';
-
-/** Enlaza una carpeta de OPFS como carpeta de datos (el selector nativo no se puede automatizar). */
-async function linkOpfs(page: Page) {
-  await page.evaluate(async (name) => {
-    const root = await navigator.storage.getDirectory();
-    const dir = await root.getDirectoryHandle(name, { create: true });
-    const t = window.__trayecto as { fs: { link(d: FileSystemDirectoryHandle): Promise<boolean> } };
-    await t.fs.link(dir);
-  }, DIR);
-  await expect.poll(() => fsState(page)).toBe('ok');
-}
-const fsState = (page: Page) =>
-  page.evaluate(() => (window.__trayecto as { fs: { state: { state: string } } }).fs.state.state);
-const readFile = (page: Page) =>
-  page.evaluate(
-    async ([dir, file]) => {
-      const root = await navigator.storage.getDirectory();
-      const d = await root.getDirectoryHandle(dir);
-      return (await (await d.getFileHandle(file)).getFile()).text();
-    },
-    [DIR, FILE],
-  );
-const writeFile = (page: Page, text: string) =>
-  page.evaluate(
-    async ([dir, file, t]) => {
-      const root = await navigator.storage.getDirectory();
-      const d = await root.getDirectoryHandle(dir);
-      const w = await (await d.getFileHandle(file, { create: true })).createWritable();
-      await w.write(t);
-      await w.close();
-    },
-    [DIR, FILE, text],
-  );
-const removeFile = (page: Page) =>
-  page.evaluate(
-    async ([dir, file]) => {
-      const root = await navigator.storage.getDirectory();
-      await (await root.getDirectoryHandle(dir)).removeEntry(file);
-    },
-    [DIR, FILE],
-  );
-async function importBackup(page: Page, text: string) {
-  await goTo(page, 'respaldo', 'Respaldo');
-  await page.setInputFiles('#importFile', {
-    name: 'respaldo.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(text),
-  });
-  await confirmModal(page);
-  await expect(page.locator('#toasts')).toContainText('Respaldo importado');
-}
 const ta = async (page: Page) => (await getState(page)).trips.find((t) => t.id === 'ta')!;
 async function reload(page: Page) {
   await page.reload();
