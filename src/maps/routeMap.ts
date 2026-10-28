@@ -1,5 +1,6 @@
 /** Mapa de un viaje con MapLibre. */
 import { EMPTY_FC, boundsOf, llOf, speedGradient } from './geo';
+import { routeAnchor } from './layers';
 import { MapLib } from './loader';
 import { buildPlacesMap } from './placesMap';
 import { applyPlay } from './play';
@@ -70,7 +71,7 @@ export function buildMap(m: MapEntry) {
       at.removeAttribute('open');
       at.classList.remove('maplibregl-compact-show');
     } /* atribución compacta: solo el botón (i) hasta que se abre */
-    const below = map.getStyle().layers.find((l) => l.type === 'symbol')?.id,
+    const below = routeAnchor(map.getStyle().layers),
       cap = { 'line-cap': 'round', 'line-join': 'round' } as const;
     const solid = plan.line === 'solid';
     if (plan.line !== 'none') {

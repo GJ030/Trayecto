@@ -11,6 +11,7 @@ import { ROUTING } from '@/data/routing';
 import { tripKey, type PairStat, type Trip } from '@/data/schema';
 import { S, requestRender } from '@/data/store';
 import { EMPTY_FC, boundsOf, llOf, speedGradient, type SpeedPoint } from './geo';
+import { routeAnchor } from './layers';
 import { MapLib } from './loader';
 import { failMap, revealMap, type MapEntry } from './registry';
 import { reduceMotion } from '@/shared/ui/dom';
@@ -127,7 +128,10 @@ export function buildPlacesMap(m: MapEntry) {
       at.removeAttribute('open');
       at.classList.remove('maplibregl-compact-show');
     }
-    const below = map.getStyle().layers.find((l) => l.type === 'symbol')?.id,
+    /* las rutas van encima de las calles y debajo de las etiquetas; el calor se queda como estaba, bajo las calles y encima del
+       relieve, como un resplandor detrás del mapa */
+    const below = routeAnchor(map.getStyle().layers),
+      glow = map.getStyle().layers.find((l) => l.type === 'symbol')?.id,
       cap = { 'line-cap': 'round', 'line-join': 'round' } as const;
     ['routes', 'heat', 'pairs'].forEach((id) =>
       map.addSource(id, { type: 'geojson', data: EMPTY_FC }),
@@ -171,7 +175,7 @@ export function buildPlacesMap(m: MapEntry) {
           'heatmap-opacity': 0.9,
         },
       },
-      below,
+      glow,
     );
     /* 'routes' lleva todos los viajes con points: los de geometría real (real = 1) van sólidos; el resto, rectas punteadas */
     const realF = ['==', ['get', 'real'], 1] as ExpressionSpecification,
