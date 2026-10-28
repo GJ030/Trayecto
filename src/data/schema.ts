@@ -3,7 +3,8 @@
  * el saneado y la validación. El resto de la aplicación importa los tipos de este archivo.
  */
 import { decodePolyline, encodePolyline } from './polyline';
-import { resolvePoints } from './routes';
+import { MAX_WAYPOINTS } from './routing';
+import { resolvePoints, syncRoute } from './routes';
 import { validGeo } from '@/shared/utils/geo';
 import { fin } from '@/shared/utils/math';
 import { norm } from '@/shared/utils/norm';
@@ -96,8 +97,6 @@ export interface TripRoute {
   n: number;
   geometry?: RouteLine;
 }
-/** Máximo de puntos intermedios por viaje. */
-export const MAX_WAYPOINTS = 20;
 export interface Trip {
   id: string;
   date: string;
@@ -478,15 +477,31 @@ export function parseBackup(o: Raw): ParsedBackup {
         vehicleId: String(t.vehicleId || ''),
         tag: (t.tag === 'Personal' ? 'Personal' : 'Trabajo') as Tag,
       };
-      const out = Object.assign(
-        c,
-        cleanComputer(t.computerKmpl, t.computerUnit),
-        resolvePoints(c, t.points, t.pointsSource, places),
-      ) as Trip;
       const w = cleanWaypoints(t.waypoints),
         r = cleanRoute(t.route, true);
-      if (w.length) out.waypoints = w;
-      if (r) out.route = r;
+      /* la ruta calculada solo vale si sigue coincidiendo con las ubicaciones actuales; se decide antes de derivar los puntos */
+      const h: {
+        origin: string;
+        destination: string;
+        pointsSource: PointsSource;
+        waypoints?: LatLng[];
+        route?: TripRoute;
+      } = {
+        origin: c.origin,
+        destination: c.destination,
+        pointsSource: t.pointsSource === 'imported' ? 'imported' : 'auto',
+        ...(w.length ? { waypoints: w } : {}),
+        ...(r ? { route: r } : {}),
+      };
+      syncRoute(h, places, false, false);
+      Object.assign(
+        c,
+        cleanComputer(t.computerKmpl, t.computerUnit),
+        h.waypoints ? { waypoints: h.waypoints } : {},
+        h.route ? { route: h.route } : {},
+      );
+      /* los puntos se derivan de la ruta vigente, así que ya debe estar en el viaje */
+      const out = Object.assign(c, resolvePoints(c, t.points, t.pointsSource, places)) as Trip;
       return out;
     });
   const fuel: Fuel[] = d.fuel

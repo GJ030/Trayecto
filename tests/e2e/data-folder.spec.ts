@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import {
   LINE,
+  SIG_TA,
   confirmModal,
   expect,
   getState,
@@ -81,7 +82,7 @@ test('el archivo guarda la geometría como polyline y el localStorage no', async
   const stored = (await getStored(appHttp))!.trips.find((t) => t.id === 'ta')!;
   expect(stored.route).toEqual({
     status: 'ok',
-    sig: 'sig-ta',
+    sig: SIG_TA,
     distance: 5234.5,
     duration: 612.3,
     n: LINE.length,
@@ -138,7 +139,7 @@ test('si el archivo marca la ruta como pendiente, la caché sin geometría queda
   const file = JSON.parse(await readFile(appHttp));
   file.data.trips[0].route = {
     status: 'pending',
-    sig: 'sig-ta',
+    sig: SIG_TA,
     distance: null,
     duration: null,
     n: 0,

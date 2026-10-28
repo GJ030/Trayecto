@@ -2,7 +2,17 @@
  * Datos y utilidades compartidas por las pruebas. No forma parte de la aplicación: solo lo importan
  * los archivos `*.test.ts`. Las coordenadas son ficticias.
  */
-import { normalize, type Fuel, type Place, type Trip, type Vehicle } from '@/data/schema';
+import { routeStops } from '@/data/routes';
+import { routeSig } from '@/data/routing';
+import {
+  normalize,
+  type Fuel,
+  type LatLng,
+  type Place,
+  type Trip,
+  type TripRoute,
+  type Vehicle,
+} from '@/data/schema';
 import { seed } from '@/data/seed';
 import { onChange, setS, type ChangeEvent } from '@/data/store';
 
@@ -85,3 +95,33 @@ export function recordEvents() {
   return { events, stop };
 }
 export const clone = <T>(v: T): T => structuredClone(v);
+
+/** Geometría ficticia que serpentea entre dos puntos (n vértices, espaciado irregular), como la que devolvería un servicio de ruteo. */
+export function windingLine(a: LatLng, b: LatLng, n = 30): [number, number][] {
+  return Array.from({ length: n }, (_, i) => {
+    const f = (i / (n - 1)) ** 1.3;
+    return [
+      +(a.lng + (b.lng - a.lng) * f + Math.sin(i / 2) * 0.002).toFixed(6),
+      +(a.lat + (b.lat - a.lat) * f + Math.cos(i / 3) * 0.0015).toFixed(6),
+    ] as [number, number];
+  });
+}
+/** Ruta calculada «ok» con la huella que le corresponde al viaje en esos lugares. */
+export function routeFor(
+  t: Pick<Trip, 'origin' | 'destination'> & Partial<Pick<Trip, 'waypoints'>>,
+  places: Place[],
+  coordinates: [number, number][] = [],
+  over: Partial<TripRoute> = {},
+): TripRoute {
+  const stops = routeStops(t, places)!;
+  const coords = coordinates.length ? coordinates : windingLine(stops[0], stops[stops.length - 1]);
+  return {
+    status: 'ok',
+    sig: routeSig(stops),
+    distance: 5234.5,
+    duration: 612.3,
+    n: coords.length,
+    geometry: { type: 'LineString', coordinates: coords },
+    ...over,
+  };
+}

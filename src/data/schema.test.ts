@@ -23,7 +23,7 @@ import {
   type TripInput,
 } from './schema';
 import { encodePolyline } from './polyline';
-import { load, makePlaces, trip } from '@/testing/fixtures';
+import { load, makePlaces, routeFor, trip } from '@/testing/fixtures';
 
 const tripInput = (over: Partial<TripInput> = {}): TripInput => {
   const { id, points, pointsSource, computerKmpl, computerUnit, ...base } = trip();
@@ -446,10 +446,27 @@ describe('rutas en el respaldo', () => {
     data: { vehicles: [], places: makePlaces(), trips, fuel: [], settings: {} },
   });
   it('parseBackup incorpora ruta y puntos intermedios del viaje', () => {
-    const t = { ...trip(), waypoints: [{ lat: 10.02, lng: 10.01 }], route: okRoute() };
+    const tw = { ...trip(), waypoints: [{ lat: 10.02, lng: 10.01 }] };
+    const t = { ...tw, route: routeFor(tw, makePlaces(), LINE.coordinates) };
     const r = parseBackup(file([t]));
     expect(r.data!.trips[0].waypoints).toEqual([{ lat: 10.02, lng: 10.01 }]);
     expect(r.data!.trips[0].route!.geometry).toEqual(LINE);
+  });
+  it('una ruta cuya huella ya no coincide con los lugares se descarta y los puntos vuelven a ser la recta', () => {
+    const t = {
+      ...trip(),
+      route: routeFor(trip(), makePlaces(), LINE.coordinates, { sig: 'vieja' }),
+    };
+    const r = parseBackup(file([t]));
+    expect('route' in r.data!.trips[0]).toBe(false);
+    expect(r.data!.trips[0].points.length).toBeGreaterThanOrEqual(20);
+    expect(r.data!.trips[0].points.length).toBeLessThanOrEqual(60);
+  });
+  it('una ruta vigente define los puntos del viaje: siguen su geometría', () => {
+    const t = { ...trip(), route: routeFor(trip(), makePlaces(), LINE.coordinates) };
+    const pts = parseBackup(file([t])).data!.trips[0].points;
+    expect(pts[0]).toMatchObject({ lat: LINE.coordinates[0][1], lng: LINE.coordinates[0][0] });
+    expect(pts.length).toBeGreaterThanOrEqual(60);
   });
   it('un viaje sin ruta ni puntos intermedios no gana esos campos', () => {
     const r = parseBackup(file([trip()]));
@@ -475,11 +492,24 @@ describe('rutas en el respaldo', () => {
 });
 
 describe('stringifyData: dónde vive la geometría', () => {
-  const t = trip({ route: cleanRoute(okRoute(), true)!, waypoints: [{ lat: 10.02, lng: 10.01 }] });
+  const wp = [{ lat: 10.02, lng: 10.01 }];
+  const t = trip({
+    waypoints: wp,
+    route: cleanRoute(
+      routeFor({ ...trip(), waypoints: wp }, makePlaces(), LINE.coordinates),
+      true,
+    )!,
+  });
   const data = { trips: [t] };
   it('la caché del navegador (por omisión) no lleva geometría pero sí los datos ligeros', () => {
     const o = JSON.parse(stringifyData(data)).trips[0];
-    expect(o.route).toEqual({ status: 'ok', sig: 'abc', distance: 5234.5, duration: 612.3, n: 3 });
+    expect(o.route).toEqual({
+      status: 'ok',
+      sig: t.route!.sig,
+      distance: 5234.5,
+      duration: 612.3,
+      n: 3,
+    });
     expect(o.waypoints).toEqual([{ lat: 10.02, lng: 10.01 }]);
     expect(stringifyData(data)).not.toContain('coordinates');
     expect(stringifyData(data)).not.toContain('poly');

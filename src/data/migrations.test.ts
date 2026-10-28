@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { migrate } from './migrations';
 import { tripPoints } from './routes';
 import { DATA_VERSION, SEED_GEO, type Raw } from './schema';
-import { place, trip } from '@/testing/fixtures';
+import { place, routeFor, trip } from '@/testing/fixtures';
 
 /** Datos como los guardaba la v1: lugares con x/y en el mapa esquemático, sin lat/lng ni points. */
 const v1 = (): Raw => {
@@ -135,5 +135,48 @@ describe('migrate: rutas generadas que no se guardaron', () => {
     expect(migrate(d)).toBe(d);
     const e = stored(trip({ pointsSource: 'auto', points: [] }));
     expect(migrate(e)).toBe(e);
+  });
+});
+
+describe('migrate: vigencia de la ruta calculada guardada en la caché', () => {
+  const places = () => [place('pa', 'Alfa', 10, 10), place('pb', 'Beta', 10.04, 10.05)];
+  const cache = (route: unknown): Raw => {
+    const { points, ...t } = trip({ route: route as never });
+    void points;
+    return { version: 2, places: places(), trips: [t] };
+  };
+  const light = (r: ReturnType<typeof routeFor>) => ({ ...r, geometry: undefined });
+
+  it('una ruta «ok» vigente sin geometría se conserva y el viaje queda sin trazo hasta que llegue la geometría', () => {
+    const r = light(routeFor(trip(), places()));
+    const t = migrate(cache(r)).trips[0];
+    expect(t.route).toEqual(r);
+    expect(t.points).toEqual([]);
+    expect(t.pointsSource).toBe('auto');
+  });
+  it('una ruta con huella vieja se descarta y el viaje se dibuja como recta', () => {
+    const r = light(routeFor(trip(), places(), [], { sig: 'vieja' }));
+    const t = migrate(cache(r)).trips[0];
+    expect('route' in t).toBe(false);
+    expect(t.points.length).toBeGreaterThanOrEqual(20);
+    expect(t.points.length).toBeLessThanOrEqual(60);
+  });
+  it('una ruta «pendiente» vigente se conserva y se dibuja como recta', () => {
+    const r = {
+      ...light(routeFor(trip(), places())),
+      status: 'pending',
+      distance: null,
+      duration: null,
+      n: 0,
+    };
+    const t = migrate(cache(r)).trips[0];
+    expect(t.route).toEqual(r);
+    expect(t.points.length).toBeGreaterThanOrEqual(20);
+  });
+  it('si se movió un lugar mientras tanto, la ruta ya no vale', () => {
+    const r = light(routeFor(trip(), places()));
+    const d = cache(r);
+    d.places[1].lat = 10.2;
+    expect('route' in migrate(d).trips[0]).toBe(false);
   });
 });

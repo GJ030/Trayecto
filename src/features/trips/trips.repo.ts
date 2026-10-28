@@ -2,7 +2,7 @@
  * Repositorio de viajes: único lugar que modifica `S.trips`.
  * Valida con data/schema.ts, aplica las cascadas y emite el evento de cambio.
  */
-import { tripPoints } from '@/data/routes';
+import { syncRoute, tripPoints } from '@/data/routes';
 import {
   ValidationError,
   checkTrip,
@@ -36,7 +36,7 @@ function core(input: TripInput, id: string): TripCore {
   };
 }
 /** Lo que define la ruta de un viaje: si cambia, una ruta generada por la app se regenera. */
-const routeSig = (x: TripCore) =>
+const routeKey = (x: TripCore) =>
   [
     x.date,
     fromMin(toMin(x.depart)),
@@ -57,6 +57,7 @@ export interface RetargetedTrip {
   origin: string;
   destination: string;
   points: RoutePoint[];
+  route: Trip['route'];
 }
 
 export const tripsRepo = {
@@ -67,9 +68,11 @@ export const tripsRepo = {
     const t = core(input, uid('t'));
     rememberUnit(input);
     const nt: Trip = Object.assign(t, {
-      points: tripPoints(t, S.places),
+      points: [] as RoutePoint[],
       pointsSource: 'auto' as const,
     });
+    syncRoute(nt, S.places, S.settings.routing);
+    nt.points = tripPoints(nt, S.places);
     S.trips.push(nt);
     emitChange(['trips', 'settings']);
     return nt;
@@ -80,9 +83,13 @@ export const tripsRepo = {
     rememberUnit(input);
     const cur = S.trips.find((x) => x.id === id);
     if (!cur) return null;
-    const moved = routeSig(cur) !== routeSig(t);
+    const moved = routeKey(cur) !== routeKey(t);
     Object.assign(cur, { ...t, id: cur.id });
-    if (cur.pointsSource === 'auto' && moved) cur.points = tripPoints(cur, S.places);
+    if (cur.pointsSource === 'auto') {
+      /* la ruta calculada deja de valer si cambió un extremo; los puntos se derivan de la ruta vigente (o de la recta) */
+      const changed = syncRoute(cur, S.places, S.settings.routing);
+      if (moved || changed) cur.points = tripPoints(cur, S.places);
+    }
     emitChange(['trips', 'settings']);
     return cur;
   },
@@ -126,6 +133,7 @@ export const tripsRepo = {
     let k = 0;
     S.trips.forEach((t) => {
       if (t.pointsSource === 'auto' && (norm(t.origin) === n || norm(t.destination) === n)) {
+        syncRoute(t, S.places, S.settings.routing);
         t.points = tripPoints(t, S.places);
         k++;
       }
@@ -144,14 +152,20 @@ export const tripsRepo = {
       const o = norm(t.origin) === sn,
         d = norm(t.destination) === sn;
       if (!o && !d) return;
-      changed.push({ trip: t, origin: t.origin, destination: t.destination, points: t.points });
+      changed.push({
+        trip: t,
+        origin: t.origin,
+        destination: t.destination,
+        points: t.points,
+        route: t.route,
+      });
       if (o) t.origin = toName;
       if (d) t.destination = toName;
     });
     changed.forEach((c) => {
       if (c.trip.pointsSource === 'auto') {
-        const pts = tripPoints(c.trip, S.places);
-        if (pts.length) c.trip.points = pts;
+        syncRoute(c.trip, S.places, S.settings.routing);
+        c.trip.points = tripPoints(c.trip, S.places);
       }
     });
     if (changed.length) emitChange('trips');
@@ -164,6 +178,8 @@ export const tripsRepo = {
         c.trip.origin = c.origin;
         c.trip.destination = c.destination;
         c.trip.points = c.points;
+        if (c.route) c.trip.route = c.route;
+        else delete c.trip.route;
       }
     });
     if (changed.length) emitChange('trips');

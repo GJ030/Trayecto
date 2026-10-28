@@ -1,16 +1,17 @@
-/** Generación y saneado de las rutas (points) de los viajes. */
-import type { Place, PointsSource, RoutePoint, Trip } from './schema';
+/** Trazado, línea de tiempo y vigencia de las rutas (points) de los viajes. */
+import { routeSig } from './routing';
+import type { LatLng, Place, PointsSource, RoutePoint, Trip } from './schema';
 import { parseDate, toMin } from '@/shared/utils/dates';
 import { validGeo } from '@/shared/utils/geo';
 import { hashStr, sum } from '@/shared/utils/math';
 import { norm } from '@/shared/utils/norm';
 
-type LatLng = { lat: number; lng: number };
 /** Lo mínimo que hace falta de un viaje para trazar su ruta. */
 export type RouteTrip = Pick<
   Trip,
   'id' | 'date' | 'depart' | 'arrive' | 'origin' | 'destination' | 'odoStart' | 'odoEnd'
->;
+> &
+  Partial<Pick<Trip, 'route' | 'waypoints'>>;
 
 function rng32(a: number) {
   return () => {
@@ -20,119 +21,123 @@ function rng32(a: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-/* Ruta tipo calle entre dos lugares con lat/lng: tramos ortogonales, 20–60 puntos {lat,lng,t,speed}.
-   Determinista por id de viaje; el promedio de speed coincide con la velocidad del viaje. Sin coordenadas en algún extremo devuelve [] */
-export function tripPoints(t: RouteTrip, places: Place[]): RoutePoint[] {
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const kmDist = (p: LatLng, q: LatLng, kx: number) =>
+  Math.hypot((q.lng - p.lng) * kx, (q.lat - p.lat) * 111.2);
+const lngKm = (lat: number) => 111.32 * Math.cos((lat * Math.PI) / 180);
+
+/** Origen, puntos intermedios y destino con ubicación (lo que se le pide al servicio de ruteo); null si falta la de un extremo. */
+export function routeStops(
+  t: Pick<Trip, 'origin' | 'destination'> & Partial<Pick<Trip, 'waypoints'>>,
+  places: Place[],
+): LatLng[] | null {
   const byName = (n: string) => places.find((p) => norm(p.name) === norm(n));
   const a = byName(t.origin),
     b = byName(t.destination);
-  if (!a || !b || !validGeo(a.lat, a.lng) || !validGeo(b.lat, b.lng)) return [];
-  const rnd = rng32(hashStr('trayecto-ruta|' + t.id));
-  const A: LatLng = { lat: a.lat as number, lng: a.lng as number },
-    B: LatLng = { lat: b.lat as number, lng: b.lng as number };
-  const kx = 111.32 * Math.cos((A.lat * Math.PI) / 180),
-    ky = 111.2;
-  const km = (p: LatLng, q: LatLng) => Math.hypot((q.lng - p.lng) * kx, (q.lat - p.lat) * ky);
-  const lerp = (p: LatLng, q: LatLng, f: number): LatLng => ({
-    lat: p.lat + (q.lat - p.lat) * f,
-    lng: p.lng + (q.lng - p.lng) * f,
-  });
-  const dx = (B.lng - A.lng) * kx,
-    dy = (B.lat - A.lat) * ky;
-  const way: LatLng[] = [A];
-  if (Math.hypot(dx, dy) < 0.15) {
-    const w = 0.004 * (1 + rnd() * 0.5) * (rnd() < 0.5 ? -1 : 1),
-      h = 0.003 * (1 + rnd() * 0.5) * (rnd() < 0.5 ? -1 : 1);
-    way.push(
-      { lat: A.lat, lng: A.lng + w },
-      { lat: A.lat + h, lng: A.lng + w },
-      { lat: A.lat + h, lng: A.lng },
-      B,
-    );
-  } else {
-    const hFirst = Math.abs(dx) >= Math.abs(dy) ? rnd() < 0.75 : rnd() < 0.25,
-      steps = 2 + Math.floor(rnd() * 3);
-    const split = () => {
-      const w = Array.from({ length: steps }, () => 0.35 + rnd()),
-        s = sum(w);
-      return w.map((x) => x / s);
-    };
-    const fh = split(),
-      fv = split();
-    let lat = A.lat,
-      lng = A.lng;
-    for (let i = 0; i < steps; i++)
-      for (const ax of hFirst ? 'hv' : 'vh') {
-        if (ax === 'h') lng += (B.lng - A.lng) * fh[i];
-        else lat += (B.lat - A.lat) * fv[i];
-        way.push({ lat, lng });
-      }
-    way[way.length - 1] = B;
-    if (Math.min(Math.abs(dx), Math.abs(dy)) < 0.6) {
-      /* trazo casi recto: un desvío a una calle paralela */
-      let j = 0,
-        best = -1;
-      for (let i = 0; i < way.length - 1; i++) {
-        const l = km(way[i], way[i + 1]);
-        if (l > best) {
-          best = l;
-          j = i;
-        }
-      }
-      if (best >= 0.8) {
-        const u = way[j],
-          v = way[j + 1],
-          o = (0.25 + rnd() * 0.35) * (rnd() < 0.5 ? -1 : 1);
-        const horiz = Math.abs(v.lng - u.lng) * kx > Math.abs(v.lat - u.lat) * ky;
-        const off = (p: LatLng): LatLng =>
-          horiz ? { lat: p.lat + o / ky, lng: p.lng } : { lat: p.lat, lng: p.lng + o / kx };
-        const s1 = lerp(u, v, 0.3),
-          s3 = lerp(u, v, 0.7);
-        way.splice(j + 1, 0, s1, off(s1), off(s3), s3);
-      }
-    }
+  if (!a || !b || !validGeo(a.lat, a.lng) || !validGeo(b.lat, b.lng)) return null;
+  const mid = (t.waypoints || []).filter((w) => validGeo(w.lat, w.lng));
+  return [
+    { lat: a.lat as number, lng: a.lng as number },
+    ...mid.map((w) => ({ lat: w.lat, lng: w.lng })),
+    { lat: b.lat as number, lng: b.lng as number },
+  ];
+}
+
+/* Cómo se dibuja la ruta de un viaje:
+   'geometry' = calle por calle (calculada), 'imported' = ruta ajena, 'loading' = calculada pero su geometría aún no llega del
+   archivo (solo marcadores, sin línea), 'straight' = sin ruta calculada o pendiente: recta punteada entre los puntos */
+export type RouteKind = 'geometry' | 'imported' | 'loading' | 'straight';
+export function routeKind(t: Pick<Trip, 'pointsSource' | 'route'>): RouteKind {
+  if (t.pointsSource === 'imported') return 'imported';
+  if (t.route && t.route.status === 'ok') return t.route.geometry ? 'geometry' : 'loading';
+  return 'straight';
+}
+/** ¿El viaje tiene una geometría real (calculada o importada)? El mapa de calor y los trayectos frecuentes solo usan esos. */
+export const hasRealRoute = (t: Pick<Trip, 'pointsSource' | 'route'>) => {
+  const k = routeKind(t);
+  return k === 'geometry' || k === 'imported';
+};
+
+/** Datos de un viaje que definen su ruta calculada (el resto del viaje no la afecta). */
+type RouteHolder = Pick<Trip, 'origin' | 'destination' | 'pointsSource'> &
+  Partial<Pick<Trip, 'waypoints' | 'route'>>;
+/**
+ * Mantiene la ruta calculada de un viaje de la app al día con sus puntos. Si la huella de lo que se pidió ya no coincide
+ * (cambió un extremo, un punto intermedio o la ubicación de un lugar) la geometría guardada deja de valer: pasa a
+ * «pendiente» con el ruteo activado, o se descarta. Con `create` y el ruteo activado, un viaje sin ruta queda «pendiente».
+ * Las rutas importadas no se tocan. Devuelve si cambió algo.
+ */
+export function syncRoute(t: RouteHolder, places: Place[], routingOn: boolean, create = true) {
+  if (t.pointsSource === 'imported') return false;
+  const stops = routeStops(t, places),
+    r = t.route;
+  if (!stops) {
+    if (!r) return false;
+    delete t.route;
+    return true;
   }
-  const w2 = [way[0]];
-  for (let i = 1; i < way.length - 1; i++)
-    if (km(w2[w2.length - 1], way[i]) > 0.03) w2.push(way[i]);
-  w2.push(way[way.length - 1]);
-  const legs = w2.slice(1).map((p, i) => km(w2[i], p)),
-    L = sum(legs) || 1;
+  const sig = routeSig(stops);
+  if (r && r.sig === sig) return false;
+  if (routingOn && (r || create)) {
+    t.route = { status: 'pending', sig, distance: null, duration: null, n: 0 };
+    return true;
+  }
+  if (r) {
+    delete t.route;
+    return true;
+  }
+  return false;
+}
+
+/* Reparte n puntos a distancias iguales a lo largo de la polilínea (incluye el primero y el último) */
+function resample(way: LatLng[], n: number): LatLng[] {
+  const kx = lngKm(way[0].lat),
+    cum = [0];
+  for (let i = 1; i < way.length; i++) cum.push(cum[i - 1] + kmDist(way[i - 1], way[i], kx));
+  const L = cum[cum.length - 1];
+  const out: LatLng[] = [{ ...way[0] }];
+  let j = 0;
+  for (let k = 1; k < n - 1; k++) {
+    const d = (L * k) / (n - 1);
+    while (j < way.length - 2 && cum[j + 1] < d) j++;
+    const seg = cum[j + 1] - cum[j],
+      f = seg > 0 ? (d - cum[j]) / seg : 0;
+    out.push({
+      lat: way[j].lat + (way[j + 1].lat - way[j].lat) * f,
+      lng: way[j].lng + (way[j + 1].lng - way[j].lng) * f,
+    });
+  }
+  out.push({ ...way[way.length - 1] });
+  return out;
+}
+
+/* Puntos del trazo con hora y velocidad: de la hora de salida a la de llegada, repartidos según distancia ÷ velocidad relativa
+   (arranca y frena despacio, ruido suave y algunos semáforos); el promedio de speed es exactamente el del viaje.
+   Determinista por id de viaje. */
+function timeline(t: RouteTrip, pts: LatLng[]): RoutePoint[] {
+  const rnd = rng32(hashStr('trayecto-ruta|' + t.id)),
+    n = pts.length,
+    kx = lngKm(pts[0].lat);
+  const legs = pts.slice(1).map((p, i) => kmDist(pts[i], p, kx)),
+    len = sum(legs),
+    stepKm = len / Math.max(1, n - 1);
   const kmT = Math.max(0, +t.odoEnd - +t.odoStart);
-  const N = Math.max(w2.length, Math.min(60, Math.max(20, Math.round(12 + kmT * 1.6)))),
-    E = N - w2.length;
-  const raw = legs.map((l) => (E * l) / L),
-    cnt = raw.map(Math.floor);
-  raw
-    .map((r, i): [number, number] => [r - cnt[i], i])
-    .sort((p, q) => q[0] - p[0] || p[1] - q[1])
-    .slice(0, E - sum(cnt))
-    .forEach(([, i]) => cnt[i]++);
-  const pts: LatLng[] = [{ ...w2[0] }];
-  legs.forEach((_, j) => {
-    const m = cnt[j];
-    for (let k = 1; k <= m; k++) {
-      const p = lerp(w2[j], w2[j + 1], (k + (rnd() - 0.5) * 0.5) / (m + 1));
-      p.lat += (rnd() - 0.5) * 2.4e-5;
-      p.lng += (rnd() - 0.5) * 2.4e-5;
-      pts.push(p);
-    }
-    pts.push({ ...w2[j + 1] });
-  });
-  const n = pts.length;
-  /* perfil de velocidad: arranca y frena despacio, ruido suave y algunos semáforos */
-  const r: number[] = [],
+  /* la correlación del ruido depende de la distancia entre puntos, no de cuántos haya */
+  const phi = Math.pow(0.55, Math.max(stepKm, 0.01) / 0.2),
+    wide = Math.max(0, Math.round(0.05 / Math.max(stepKm, 0.005)) - 1),
     slow = new Set<number>();
+  for (let k = 0, c = Math.min(60, 1 + Math.floor(len / 4)); k < c; k++) {
+    const at = 2 + Math.floor(rnd() * (n - 4));
+    for (let w = 0; w <= wide && at + w < n - 1; w++) slow.add(at + w);
+  }
+  const r: number[] = [];
   let nz = 1;
-  for (let k = 0, c = 1 + Math.floor(n / 14); k < c; k++) slow.add(2 + Math.floor(rnd() * (n - 4)));
   for (let i = 0; i < n; i++) {
     const u = i / (n - 1);
-    nz = 0.55 * nz + 0.45 * (0.6 + rnd() * 0.8);
-    r.push(
-      Math.max(0.05, Math.min(1, 0.2 + 4 * Math.min(u, 1 - u)) * nz * (slow.has(i) ? 0.3 : 1)),
-    );
+    nz = phi * nz + (1 - phi) * (0.6 + rnd() * 0.8);
+    r.push(clamp(0.2 + 4 * Math.min(u, 1 - u), 0, 1) * nz * (slow.has(i) ? 0.3 : 1));
+    r[i] = Math.max(0.05, r[i]);
   }
-  /* tiempos: de la hora de salida a la de llegada, repartidos según distancia ÷ velocidad relativa */
   const s0 = parseDate(t.date),
     dm = toMin(t.depart);
   s0.setHours(Math.floor(dm / 60), dm % 60, 0, 0);
@@ -141,7 +146,7 @@ export function tripPoints(t: RouteTrip, places: Place[]): RoutePoint[] {
   const T0 = s0.getTime(),
     cum = [0];
   for (let i = 1; i < n; i++)
-    cum.push(cum[i - 1] + (km(pts[i - 1], pts[i]) + 0.005) / Math.max(0.05, (r[i - 1] + r[i]) / 2));
+    cum.push(cum[i - 1] + (legs[i - 1] + 0.005) / Math.max(0.05, (r[i - 1] + r[i]) / 2));
   /* velocidades en décimas de km/h, ajustadas para que su promedio sea exactamente el del viaje */
   const target = kmT / (dur / 60),
     mr = sum(r) / n,
@@ -156,8 +161,8 @@ export function tripPoints(t: RouteTrip, places: Place[]): RoutePoint[] {
     }
   }
   return pts.map((p, i) => ({
-    lat: +p.lat.toFixed(5),
-    lng: +p.lng.toFixed(5),
+    lat: +p.lat.toFixed(6),
+    lng: +p.lng.toFixed(6),
     t: new Date(
       i === n - 1 ? T0 + dur * 60000 : T0 + Math.round((cum[i] / cum[n - 1]) * dur * 60) * 1000,
     )
@@ -165,6 +170,25 @@ export function tripPoints(t: RouteTrip, places: Place[]): RoutePoint[] {
       .replace('.000Z', 'Z'),
     speed: sp[i] / 10,
   }));
+}
+/* Puntos con hora y velocidad de un viaje de la app, derivados de su ruta:
+   - con geometría calculada: la geometría completa, remuestreada a pasos uniformes (~25 m, hasta 1 200 puntos);
+   - sin ruta calculada o pendiente: la recta entre origen, puntos intermedios y destino (20–60 puntos);
+   - calculada pero con la geometría aún sin cargar del archivo, o sin ubicación en algún extremo: [] (sin trazo).
+   Determinista: la misma geometría da siempre los mismos puntos. */
+export function tripPoints(t: RouteTrip, places: Place[]): RoutePoint[] {
+  const stops = routeStops(t, places);
+  if (!stops) return [];
+  const kind = routeKind({ pointsSource: 'auto', route: t.route });
+  if (kind === 'loading') return [];
+  if (kind === 'geometry') {
+    const way = t.route!.geometry!.coordinates.map(([lng, lat]) => ({ lat, lng }));
+    const kx = lngKm(way[0].lat),
+      km = sum(way.slice(1).map((p, i) => kmDist(way[i], p, kx)));
+    return timeline(t, resample(way, clamp(Math.round(km * 40), 60, 1200)));
+  }
+  const kmT = Math.max(0, +t.odoEnd - +t.odoStart);
+  return timeline(t, resample(stops, clamp(Math.round(12 + kmT * 1.6), 20, 60)));
 }
 /* Puntos válidos de un respaldo: descarta los inválidos y ordena por tiempo; null si no es un arreglo */
 function cleanPoints(arr: unknown): RoutePoint[] | null {

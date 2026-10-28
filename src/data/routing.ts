@@ -3,10 +3,12 @@
  * externo: las coordenadas de origen, destino y puntos intermedios. Solo se usa con «Rutas por calles reales»
  * activado en Ajustes.
  */
-import { MAX_WAYPOINTS, type LatLng, type RouteLine } from './schema';
+import type { LatLng, RouteLine } from './schema';
 import { validGeo } from '@/shared/utils/geo';
 import { hashStr } from '@/shared/utils/math';
 
+/** Máximo de puntos intermedios por viaje. */
+export const MAX_WAYPOINTS = 20;
 /** Configuración del servicio de ruteo: cambia aquí la URL para usar otro servicio o un OSRM propio. */
 export const ROUTING = {
   /** Servidor público de demostración de OSRM (pide como máximo 1 petición por segundo y atribución). */

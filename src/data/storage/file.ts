@@ -1,4 +1,5 @@
 /** Archivo de datos local (File System Access API). */
+import { tripPoints } from '../routes';
 import {
   canonKey,
   hydrateRoutes,
@@ -441,6 +442,9 @@ function settleRoutes(file: BackupData | null) {
   const r = hydrateRoutes(S.trips, file && file.trips);
   FS.geoReady = true;
   if (!r.attached.length && !r.downgraded.length) return;
+  /* los puntos de las rutas de la app se derivan de la ruta: con la geometría ya cargada (o la ruta degradada) hay que rehacerlos */
+  for (const t of [...r.attached, ...r.downgraded])
+    if (t.pointsSource === 'auto') t.points = tripPoints(t, S.places);
   if (r.downgraded.length) Store.save(S);
   emitChange('trips', false);
 }

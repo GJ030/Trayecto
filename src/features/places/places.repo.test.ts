@@ -8,6 +8,7 @@ import {
   makePlaces,
   place,
   recordEvents,
+  routeFor,
   setState,
   trip,
   vehicle,
@@ -178,11 +179,13 @@ describe('placesRepo.merge', () => {
     expect(S.trips[0].points[0]).toMatchObject({ lat: 10.2, lng: 10.3 });
     expect(S.trips[1].points).toBe(imported); // las rutas ajenas no se tocan
   });
-  it('si el destino no tiene ubicación conserva las rutas', () => {
-    const pts = S.trips[0].points;
-    placesRepo.merge('pa', 'pc');
+  it('si el destino no tiene ubicación los viajes quedan sin trazo y deshacer los devuelve', () => {
+    const antes = clone(S.trips);
+    const r = placesRepo.merge('pa', 'pc')!;
     expect(S.trips[0].origin).toBe('Gama');
-    expect(S.trips[0].points).toBe(pts);
+    expect(S.trips[0].points).toEqual([]);
+    expect(r.undo()).toBe(true);
+    expect(S.trips).toEqual(antes);
   });
   it('limpia la selección que involucra al lugar fusionado', () => {
     S.ui.selPlace = 'pa';
@@ -251,5 +254,44 @@ describe('placesRepo.setLocation', () => {
     expect(placesRepo.setLocation('nada', 1, 1)).toBe(0);
     stop();
     expect(events).toEqual([]);
+  });
+});
+
+describe('rutas por calles reales al ubicar y fusionar lugares', () => {
+  it('ubicar un lugar invalida la ruta calculada de sus viajes; con el ruteo activado queda «pendiente»', () => {
+    S.settings.routing = true;
+    const t = S.trips[0];
+    t.route = routeFor(t, S.places);
+    t.points = tripPoints(t, S.places);
+    placesRepo.setLocation('pb', 10.3, 10.3);
+    expect(t.route).toMatchObject({ status: 'pending', n: 0 });
+    expect(t.route!.geometry).toBeUndefined();
+    expect(t.points).toEqual(tripPoints(t, S.places));
+    expect(t.points[t.points.length - 1]).toMatchObject({ lat: 10.3, lng: 10.3 });
+  });
+  it('con el ruteo apagado la ruta se descarta y el viaje se dibuja como recta', () => {
+    const t = S.trips[0];
+    t.route = routeFor(t, S.places);
+    placesRepo.setLocation('pb', 10.3, 10.3);
+    expect('route' in t).toBe(false);
+  });
+  it('un viaje sin ubicación que la recibe pasa a tener trazo (y ruta pendiente si el ruteo está activado)', () => {
+    S.settings.routing = true;
+    const c = S.trips[2]; // Beta → Gama (sin ubicación)
+    expect(c.points).toEqual([]);
+    placesRepo.setLocation('pc', 10.1, 10.1);
+    expect(c.points.length).toBeGreaterThanOrEqual(20);
+    expect(c.route).toMatchObject({ status: 'pending' });
+  });
+  it('fusionar hacia un lugar ubicado deja las rutas calculadas «pendientes» y deshacer las devuelve', () => {
+    S.settings.routing = true;
+    const a = S.trips[0];
+    a.route = routeFor(a, S.places);
+    a.points = tripPoints(a, S.places);
+    const antes = clone(S.trips);
+    const r = placesRepo.merge('pa', 'pd')!;
+    expect(a.route).toMatchObject({ status: 'pending' });
+    expect(r.undo()).toBe(true);
+    expect(S.trips).toEqual(antes);
   });
 });

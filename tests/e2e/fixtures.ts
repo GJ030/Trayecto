@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { encodePolyline } from '../../src/data/polyline';
+import { routeSig } from '../../src/data/routing';
 import type { AppData } from '../../src/data/schema';
 
 export const APP = pathToFileURL(resolve('dist/trayecto.html')).href;
@@ -101,6 +102,12 @@ export const LINE: [number, number][] = [
   [10.03, 10.03],
   [10.050001, 10.040002],
 ];
+const A = { lat: 10, lng: 10 },
+  B = { lat: 10.04, lng: 10.05 },
+  W = { lat: 10.02, lng: 10.02 };
+/** Huellas de las consultas de «ta» (con un punto intermedio) y «tb» (directa), como las calcula la app. */
+export const SIG_TA = routeSig([A, W, B]);
+export const SIG_TB = routeSig([A, B]);
 export function routeBackup(extraSettings: Record<string, unknown> = {}) {
   const trip = (id: string, over: Record<string, unknown>) => ({
     id,
@@ -130,18 +137,18 @@ export function routeBackup(extraSettings: Record<string, unknown> = {}) {
           pointsSource: 'auto',
           route: {
             status: 'ok',
-            sig: 'sig-ta',
+            sig: SIG_TA,
             distance: 5234.5,
             duration: 612.3,
             n: LINE.length,
             poly: encodePolyline(LINE, 6),
           },
-          waypoints: [{ lat: 10.02, lng: 10.02 }],
+          waypoints: [W],
         }),
         trip('tb', {
           date: '2024-06-16',
           pointsSource: 'auto',
-          route: { status: 'pending', sig: 'sig-tb', distance: null, duration: null, n: 0 },
+          route: { status: 'pending', sig: SIG_TB, distance: null, duration: null, n: 0 },
         }),
       ],
       fuel: [],

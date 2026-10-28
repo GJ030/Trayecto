@@ -1,5 +1,6 @@
 /** Mapa de lugares con MapLibre y modo ubicación. */
 import type { GeoJSONSource, Map as MlMap, Marker, MapOptions } from 'maplibre-gl';
+import { hasRealRoute } from '@/data/routes';
 import { tripKey, type PairStat, type Trip } from '@/data/schema';
 import { S, requestRender } from '@/data/store';
 import { EMPTY_FC, boundsOf, llOf, speedGradient, type SpeedPoint } from './geo';
@@ -35,7 +36,8 @@ function latestPairTrip(pair: PairStat) {
       (t) =>
         norm(t.origin) + '→' + norm(t.destination) === pair.key &&
         Array.isArray(t.points) &&
-        t.points.length >= 2,
+        t.points.length >= 2 &&
+        hasRealRoute(t),
     )
     .sort((a, b) => tripKey(b).localeCompare(tripKey(a)))[0];
 }
@@ -242,6 +244,8 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
     selPair = pairs.find((p) => p.key === S.ui.selPair);
   const rel = (t: Trip) => !!nsel && (norm(t.origin) === nsel || norm(t.destination) === nsel);
   const withPts = S.trips.filter((t) => Array.isArray(t.points) && t.points.length >= 2);
+  /* el calor solo se pinta sobre geometrías reales (calculadas o importadas), no sobre rectas que atraviesan edificios */
+  const realPts = withPts.filter(hasRealRoute);
   const set = (id: string, sig: string, build: () => GeoJSON.GeoJSON) => {
     if (m.sig?.[id] !== sig) {
       (m.sig || (m.sig = {}))[id] = sig;
@@ -256,9 +260,9 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
       geometry: { type: 'LineString', coordinates: t.points.map(llOf) },
     })),
   }));
-  set('heat', withPts.map(tripSig).join('|'), () => ({
+  set('heat', realPts.map(tripSig).join('|'), () => ({
     type: 'FeatureCollection',
-    features: withPts.flatMap((t) =>
+    features: realPts.flatMap((t) =>
       t.points.map((p) => ({
         type: 'Feature',
         properties: {},
@@ -306,7 +310,7 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
   vs('pair-halo', !!pl);
   vs('pair-line', !!pl);
   /* la densidad crece con el historial: con muchos points se baja el peso y el radio, con pocos se sube; lo mismo con la opacidad de las rutas */
-  const np = withPts.reduce((n, t) => n + t.points.length, 0),
+  const np = realPts.reduce((n, t) => n + t.points.length, 0),
     nt = withPts.length || 1,
     cl = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
   const hw = cl(Math.sqrt(500 / (np || 1)), 0.1, 1.8),

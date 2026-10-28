@@ -14,7 +14,10 @@ import {
   updateUi,
   type ChangeEvent,
 } from './store';
-import { clone, recordEvents, resetState } from '@/testing/fixtures';
+import { tripPoints } from './routes';
+import { routeSig } from './routing';
+import { routeStops } from './routes';
+import { clone, recordEvents, resetState, routeFor } from '@/testing/fixtures';
 
 describe('respaldo JSON: ida y vuelta', () => {
   beforeEach(() => {
@@ -245,16 +248,16 @@ describe('rutas por calles reales en el respaldo y en adoptData', () => {
   };
   beforeEach(() => {
     resetState();
-    S.trips[0].route = {
-      status: 'ok',
-      sig: 'abc',
-      distance: 5234.5,
-      duration: 612.3,
-      n: 3,
-      geometry: line,
+    S.trips[0].waypoints = [{ lat: 19.36, lng: -99.12 }];
+    S.trips[0].route = routeFor(S.trips[0], S.places, line.coordinates);
+    S.trips[1].route = {
+      status: 'pending',
+      sig: routeSig(routeStops(S.trips[1], S.places)!),
+      distance: null,
+      duration: null,
+      n: 0,
     };
-    S.trips[0].waypoints = [{ lat: 10.02, lng: 10.01 }];
-    S.trips[1].route = { status: 'pending', sig: 'def', distance: null, duration: null, n: 0 };
+    for (const t of [S.trips[0], S.trips[1]]) t.points = tripPoints(t, S.places);
   });
 
   it('el respaldo manual (puntos + polyline) vuelve idéntico con ruta y puntos intermedios', () => {
@@ -285,7 +288,7 @@ describe('rutas por calles reales en el respaldo y en adoptData', () => {
     const loaded = normalize(migrate(JSON.parse(stringifyData(S))));
     expect(loaded.trips[0].route).toEqual({
       status: 'ok',
-      sig: 'abc',
+      sig: S.trips[0].route!.sig,
       distance: 5234.5,
       duration: 612.3,
       n: 3,

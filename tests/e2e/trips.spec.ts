@@ -79,6 +79,7 @@ test('crear un viaje: se guarda con ruta generada y crea el lugar nuevo', async 
   // el lugar nuevo no tiene ubicación, así que no hay ruta que generar
   expect(s.places.find((p) => p.name === 'Escuela nueva')).toMatchObject({ lat: null, lng: null });
   expect(t.points).toEqual([]);
+  expect(t.route).toBeUndefined(); // con el ruteo apagado no se calcula nada
   // al crear un viaje entre lugares ubicados, la ruta sí se genera
   await app.click('[data-dz=another]');
   await expect(app.locator('#tripForm')).toBeVisible();

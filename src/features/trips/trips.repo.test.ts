@@ -1,9 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { tripsRepo } from './trips.repo';
-import { tripPoints } from '@/data/routes';
+import { routeStops, tripPoints } from '@/data/routes';
+import { routeSig } from '@/data/routing';
 import { ValidationError, type TripInput } from '@/data/schema';
 import { S } from '@/data/store';
-import { clone, makePlaces, recordEvents, setState, trip, vehicle } from '@/testing/fixtures';
+import {
+  clone,
+  makePlaces,
+  place,
+  recordEvents,
+  routeFor,
+  setState,
+  trip,
+  vehicle,
+} from '@/testing/fixtures';
 
 const input = (over: Partial<TripInput> = {}): TripInput => ({
   date: '2024-06-15',
@@ -190,12 +200,14 @@ describe('cascadas por nombre de lugar', () => {
     expect(S.trips[0].points[0]).toMatchObject({ lat: 10.3, lng: 10.3 });
     expect(S.trips[1].points).toBe(imported);
   });
-  it('si el destino de la fusión no tiene ubicación conserva las rutas anteriores', () => {
-    const a = S.trips[0].points;
-    tripsRepo.retargetPlace('Alfa', 'Gama');
+  it('si el destino de la fusión no tiene ubicación el viaje queda sin trazo, y deshacer lo devuelve', () => {
+    const antes = clone(S.trips[0]);
+    const changed = tripsRepo.retargetPlace('Alfa', 'Gama');
     expect(S.trips[0].destination).toBe('Beta');
     expect(S.trips[0].origin).toBe('Gama');
-    expect(S.trips[0].points).toBe(a);
+    expect(S.trips[0].points).toEqual([]);
+    tripsRepo.restoreRetargeted(changed);
+    expect(S.trips[0]).toEqual(antes);
   });
   it('restoreRetargeted deja los viajes exactamente como estaban', () => {
     S.places.push({ ...S.places[0], id: 'pz', name: 'Zeta', lat: 10.3, lng: 10.3 });
@@ -218,5 +230,106 @@ describe('cascadas por nombre de lugar', () => {
     expect(tripsRepo.removeByVehicle('v9')).toBe(1);
     expect(ids(S.trips)).toEqual(['a', 'c']);
     expect(tripsRepo.removeByVehicle('v9')).toBe(0);
+  });
+});
+
+describe('rutas por calles reales en el repositorio de viajes', () => {
+  const pending = (t: { origin: string; destination: string }, places = S.places) => ({
+    status: 'pending',
+    sig: routeSig(routeStops(t, places)!),
+    distance: null,
+    duration: null,
+    n: 0,
+  });
+  beforeEach(() => {
+    setState({
+      vehicles: [vehicle('v1')],
+      places: [...makePlaces(), place('pd', 'Delta', 10.2, 10.3)],
+    });
+  });
+
+  it('con el ruteo apagado un viaje nuevo no tiene ruta y se dibuja como recta', () => {
+    const t = tripsRepo.create(input());
+    expect('route' in t).toBe(false);
+    expect(t.points.length).toBeGreaterThanOrEqual(20);
+    expect(t.points.length).toBeLessThanOrEqual(60);
+  });
+  it('con el ruteo activado un viaje nuevo queda «pendiente» con la huella de sus puntos', () => {
+    S.settings.routing = true;
+    const t = tripsRepo.create(input());
+    expect(t.route).toEqual(pending(t));
+    const sinUbicar = tripsRepo.create(
+      input({ destination: 'Gama', odoStart: 5000, odoEnd: 5010 }),
+    );
+    expect('route' in sinUbicar).toBe(false);
+    expect(sinUbicar.points).toEqual([]);
+  });
+  it('editar sin cambiar lugares conserva la ruta calculada y los puntos que salen de ella', () => {
+    const t = tripsRepo.create(input());
+    t.route = routeFor(t, S.places);
+    t.points = tripPoints(t, S.places);
+    const ruta = t.route,
+      pts = t.points;
+    tripsRepo.update(t.id, input({ tag: 'Personal' }));
+    expect(t.route).toBe(ruta);
+    expect(t.points).toBe(pts);
+    tripsRepo.update(t.id, input({ odoEnd: 1020 }));
+    expect(t.route).toBe(ruta);
+    expect(t.points).not.toBe(pts);
+    expect(t.points).toEqual(tripPoints(t, S.places));
+    expect(t.points.length).toBeGreaterThanOrEqual(60);
+  });
+  it('cambiar el origen o el destino invalida la ruta: pendiente con el ruteo activado, descartada si no', () => {
+    S.settings.routing = true;
+    const t = tripsRepo.create(input());
+    t.route = routeFor(t, S.places);
+    tripsRepo.update(t.id, input({ destination: 'Delta' }));
+    expect(t.route).toEqual(pending(t));
+    expect(t.route!.geometry).toBeUndefined();
+    expect(t.points[t.points.length - 1]).toMatchObject({ lat: 10.2, lng: 10.3 }); // recta mientras tanto
+    S.settings.routing = false;
+    t.route = routeFor(t, S.places);
+    tripsRepo.update(t.id, input({ destination: 'Beta' }));
+    expect('route' in t).toBe(false);
+  });
+  it('una ruta importada no recibe ruta calculada', () => {
+    S.settings.routing = true;
+    const t = tripsRepo.create(input());
+    t.pointsSource = 'imported';
+    delete t.route;
+    tripsRepo.update(t.id, input({ destination: 'Delta' }));
+    expect('route' in t).toBe(false);
+  });
+  it('regeneratePoints: si cambia la ubicación de un lugar la ruta de sus viajes ya no vale', () => {
+    S.settings.routing = true;
+    const t = tripsRepo.create(input());
+    t.route = routeFor(t, S.places);
+    t.points = tripPoints(t, S.places);
+    S.places[1].lat = 10.2;
+    expect(tripsRepo.regeneratePoints('Beta')).toBe(1);
+    expect(t.route).toEqual(pending(t));
+    expect(t.points).toEqual(tripPoints(t, S.places));
+    expect(t.points[t.points.length - 1]).toMatchObject({ lat: 10.2 });
+  });
+  it('retargetPlace invalida la ruta y restoreRetargeted devuelve la ruta y los puntos tal cual', () => {
+    S.settings.routing = true;
+    const t = tripsRepo.create(input());
+    t.route = routeFor(t, S.places);
+    t.points = tripPoints(t, S.places);
+    const antes = clone(t);
+    const changed = tripsRepo.retargetPlace('Alfa', 'Delta');
+    expect(t.origin).toBe('Delta');
+    expect(t.route).toEqual(pending(t));
+    tripsRepo.restoreRetargeted(changed);
+    expect(t).toEqual(antes);
+  });
+  it('renombrar un lugar no toca la ruta (las ubicaciones no cambian)', () => {
+    const t = tripsRepo.create(input());
+    t.route = routeFor(t, S.places);
+    const ruta = t.route;
+    tripsRepo.renamePlace('Alfa', 'Alfa 2');
+    S.places[0].name = 'Alfa 2';
+    expect(tripsRepo.regeneratePoints('Alfa 2')).toBe(1);
+    expect(t.route).toBe(ruta);
   });
 });
