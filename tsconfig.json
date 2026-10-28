@@ -10,7 +10,7 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
-    "types": ["vite/client", "node"],
+    "types": ["vite/client", "node", "geojson"],
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]

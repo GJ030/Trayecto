@@ -43,8 +43,8 @@ export function buildMap(m: MapEntry) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.touchZoomRotate.disableRotation();
   }
-  map.on('styleimagemissing', (e) => {
-    if (!map.hasImage(e.id)) map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+  map.setMissingStyleImageResolver((id) => {
+    if (!map.hasImage(id)) map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
   }); /* el estilo pide un patrón que su sprite no trae */
   map.on(
     'error',

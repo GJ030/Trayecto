@@ -86,8 +86,8 @@ export function buildPlacesMap(m: MapEntry) {
   m.markers = [];
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   map.touchZoomRotate.disableRotation();
-  map.on('styleimagemissing', (e) => {
-    if (!map.hasImage(e.id)) map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+  map.setMissingStyleImageResolver((id) => {
+    if (!map.hasImage(id)) map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
   });
   map.on('error', () => {});
   map.on('click', (e) => {
