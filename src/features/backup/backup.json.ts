@@ -1,4 +1,4 @@
-import { parseBackup } from '@/data/schema';
+import { parseBackup, stringifyData } from '@/data/schema';
 import { FS } from '@/data/storage/file';
 import { adoptData, backupPayload, emitChange } from '@/data/store';
 import { settingsRepo } from '@/features/settings/settings.repo';
@@ -11,7 +11,7 @@ export function exportJSON() {
   const payload = backupPayload();
   download(
     `trayecto-respaldo-${isoDate(new Date())}.json`,
-    JSON.stringify(payload, null, 2),
+    stringifyData(payload, { points: 'all', routes: 'poly', indent: 2 }),
     'application/json',
   );
   settingsRepo.markBackup();

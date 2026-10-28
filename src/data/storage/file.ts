@@ -1,5 +1,12 @@
 /** Archivo de datos local (File System Access API). */
-import { parseBackup, stringifyData, type BackupData, type BackupFile } from '@/data/schema';
+import {
+  canonKey,
+  hydrateRoutes,
+  parseBackup,
+  stringifyData,
+  type BackupData,
+  type BackupFile,
+} from '@/data/schema';
 import { idbDel, idbGet, idbSet } from './idb';
 import { Store } from './local';
 import { S, adoptData, backupPayload, emitChange, setAfterSave, snapshot } from '@/data/store';
@@ -48,6 +55,8 @@ export const FS: {
   known: number | null;
   syncKey: string | null;
   rawKey: string | null;
+  /** ¿Ya se leyó el archivo (o se supo que no hay) en esta sesión? Sin eso no se escribe: podría perder geometrías que solo están en él. */
+  geoReady: boolean;
   savedAt: Date | null;
   rev: number;
   busy: boolean;
@@ -65,6 +74,7 @@ export const FS: {
   known: null,
   syncKey: null,
   rawKey: null,
+  geoReady: false,
   savedAt: null,
   rev: 0,
   busy: false,
@@ -87,12 +97,9 @@ const saveMeta = () => {
     localStorage.setItem(KEY_FS, JSON.stringify(FS.meta));
   } catch (e) {}
 };
-const canWrite = () => !!FS.handle && FS.perm === 'granted' && !FS.hold;
+const canWrite = () => !!FS.handle && FS.perm === 'granted' && !FS.hold && FS.geoReady;
 const hasData = (d: BackupData) =>
   d.trips.length + d.fuel.length + d.places.length + d.vehicles.length > 0;
-/* hints y lastBackup son preferencias de este equipo: no cuentan al decidir si dos versiones difieren */
-const canonKey = (d: BackupData) =>
-  JSON.stringify({ ...d, settings: { ...d.settings, hints: undefined, lastBackup: undefined } });
 /* ---- Validación y lectura ---- */
 /* Datos actuales pasados por parseBackup; falla si el filtro descartaría algo (el archivo no sería un respaldo fiel) */
 function validated(): Validated {
@@ -405,7 +412,7 @@ async function writeOnce() {
       }
     }
   }
-  const text = stringifyData(v.payload, 2);
+  const text = stringifyData(v.payload, { routes: 'poly', indent: 2 });
   await dailyBackup(fh, text);
   const target = fh || (await FS.handle!.getFileHandle(FS_FILE, { create: true }));
   const w = await target.createWritable();
@@ -427,8 +434,19 @@ async function writeOnce() {
   saveMeta();
   setState('ok');
 }
+/* Las geometrías de las rutas solo viven en el archivo de datos. Tras leerlo (o al saber que no hay archivo que leer) se
+   incorporan al estado las que coinciden y las rutas «ok» que ya no tienen geometría pasan a «pendiente». No marca cambios
+   pendientes ni reprograma una escritura (la caché se guarda sin pasar por save()). Desde aquí ya se puede escribir. */
+function settleRoutes(file: BackupData | null) {
+  const r = hydrateRoutes(S.trips, file && file.trips);
+  FS.geoReady = true;
+  if (!r.attached.length && !r.downgraded.length) return;
+  if (r.downgraded.length) Store.save(S);
+  emitChange('trips', false);
+}
 /* Carga en la app los datos del archivo (la caché se actualiza sin pasar por save(), que reprogramaría una escritura) */
 function applyFile(cur: FsRead) {
+  FS.geoReady = true;
   adoptData(cur.data!, true);
   Store.save(S);
   FS.known = cur.mod;
@@ -463,14 +481,17 @@ export async function openLinked() {
     } catch (e) {
       if ((e as Error).name === 'NotFoundError') {
         FS.known = null;
+        settleRoutes(null);
         await refreshBackups();
         setState('nofile');
         return;
       }
       throw e;
     }
-    const cur = await readFile(fh),
-      v = validated();
+    const cur = await readFile(fh);
+    if (cur.data) settleRoutes(cur.data);
+    else if (cur.empty) settleRoutes(null);
+    const v = validated();
     await refreshBackups();
     if (cur.error) {
       FS.known = cur.mod;
@@ -523,7 +544,7 @@ export async function openLinked() {
 /* Enlaza una carpeta ya elegida: compara con el archivo que tenga y pregunta cuál conservar */
 export async function linkFolder(dir: FileSystemDirectoryHandle) {
   trackModified();
-  const v = validated();
+  let v = validated();
   if (v.error !== undefined) {
     toast('Tus datos no pasan la validación del respaldo: ' + v.error, 'err');
     return false;
@@ -536,6 +557,11 @@ export async function linkFolder(dir: FileSystemDirectoryHandle) {
       toast('No se pudo leer la carpeta: ' + ((e as Error).message || (e as Error).name), 'err');
       return false;
     }
+  }
+  if (cur && cur.data) {
+    settleRoutes(cur.data);
+    const again = validated();
+    if (again.error === undefined) v = again;
   }
   let useFile = false;
   if (cur && cur.error) {
@@ -581,6 +607,7 @@ export async function linkFolder(dir: FileSystemDirectoryHandle) {
   FS.meta.fileMod = FS.known;
   if (useFile) applyFile(cur!);
   else {
+    if (!cur || !cur.data) settleRoutes(null);
     FS.meta.dirty = true;
     saveMeta();
     setState('ok');
@@ -675,6 +702,7 @@ export async function initFS() {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   } catch (e) {} /* reduce el riesgo de que el navegador borre la caché por falta de espacio */
   if (!FS.supported) {
+    settleRoutes(null); /* sin archivo de datos no hay de dónde cargar geometrías */
     notifyFs();
     return;
   }
@@ -685,6 +713,7 @@ export async function initFS() {
     FS.handle = null;
   }
   if (!FS.handle) {
+    settleRoutes(null);
     setState('none');
     return;
   }

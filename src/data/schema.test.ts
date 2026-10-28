@@ -10,13 +10,19 @@ import {
   checkTrip,
   checkVehicle,
   cleanComputer,
+  canonKey,
   cleanPlace,
+  cleanRoute,
+  cleanWaypoints,
+  hydrateRoutes,
   normalize,
   parseBackup,
+  stringifyData,
   tripKey,
   type FuelInput,
   type TripInput,
 } from './schema';
+import { encodePolyline } from './polyline';
 import { load, makePlaces, trip } from '@/testing/fixtures';
 
 const tripInput = (over: Partial<TripInput> = {}): TripInput => {
@@ -169,6 +175,7 @@ describe('normalize', () => {
       lastBackup: null,
       computerUnit: 'kmpl',
       odoMode: 'end',
+      routing: false,
     });
     expect(d.ui).toMatchObject({ view: 'inicio', placesLayer: 'lugares', q: '' });
     expect(d.ui.tf).toEqual({ tag: 'Todos', vehicle: 'all', from: '', to: '' });
@@ -335,5 +342,258 @@ describe('tripKey', () => {
     const b = tripKey({ date: '2024-06-15', depart: '09:00' });
     const c = tripKey({ date: '2024-06-16', depart: '07:00' });
     expect([c, a, b].sort()).toEqual([a, b, c]);
+  });
+});
+
+/* ---------------- Rutas por calles reales ---------------- */
+const LINE = {
+  type: 'LineString' as const,
+  coordinates: [
+    [10.000001, 10.000002],
+    [10.01, 10.02],
+    [10.050001, 10.040002],
+  ] as [number, number][],
+};
+const okRoute = (over: Record<string, unknown> = {}) => ({
+  status: 'ok',
+  sig: 'abc',
+  distance: 5234.5,
+  duration: 612.3,
+  n: 3,
+  geometry: LINE,
+  ...over,
+});
+
+describe('cleanWaypoints', () => {
+  it('conserva los válidos (solo lat/lng) y descarta el resto', () => {
+    expect(
+      cleanWaypoints([
+        { lat: 10, lng: 10, extra: 1 },
+        { lat: 95, lng: 0 },
+        { lat: 'x', lng: 0 },
+        null,
+        { lat: 10.5, lng: 10.5 },
+      ]),
+    ).toEqual([
+      { lat: 10, lng: 10 },
+      { lat: 10.5, lng: 10.5 },
+    ]);
+    expect(cleanWaypoints(undefined)).toEqual([]);
+    expect(cleanWaypoints('x')).toEqual([]);
+  });
+  it('acepta como máximo 20', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ lat: 10, lng: 10 + i / 100 }));
+    expect(cleanWaypoints(many)).toHaveLength(20);
+  });
+});
+
+describe('cleanRoute', () => {
+  it('acepta GeoJSON y polyline de precisión 1e-6 (sin pérdida)', () => {
+    const a = cleanRoute(okRoute(), true)!;
+    expect(a).toMatchObject({ status: 'ok', sig: 'abc', distance: 5234.5, duration: 612.3, n: 3 });
+    expect(a.geometry).toEqual(LINE);
+    const b = cleanRoute(
+      okRoute({ geometry: undefined, poly: encodePolyline(LINE.coordinates, 6) }),
+      true,
+    )!;
+    expect(b.geometry).toEqual(LINE);
+  });
+  it('estricto: descarta vértices inválidos y una ruta «ok» sin geometría pasa a «pendiente»', () => {
+    const bad = okRoute({
+      geometry: { type: 'LineString', coordinates: [...LINE.coordinates, [500, 0], ['x', 1]] },
+    });
+    expect(cleanRoute(bad, true)!.geometry!.coordinates).toEqual(LINE.coordinates);
+    const sin = cleanRoute(okRoute({ geometry: undefined }), true)!;
+    expect(sin).toMatchObject({ status: 'pending', distance: null, duration: null, n: 0 });
+    expect(sin.geometry).toBeUndefined();
+    const una = cleanRoute(
+      okRoute({ geometry: { type: 'LineString', coordinates: [[1, 1]] } }),
+      true,
+    )!;
+    expect(una.status).toBe('pending');
+    expect(cleanRoute(okRoute({ poly: undefined, geometry: undefined }), true)!.status).toBe(
+      'pending',
+    );
+    expect(cleanRoute(okRoute({ geometry: undefined, poly: '\u00ff' }), true)!.status).toBe(
+      'pending',
+    );
+  });
+  it('no estricto (caché): «ok» sin geometría se conserva, es la geometría aún no cargada', () => {
+    const r = cleanRoute(okRoute({ geometry: undefined }), false)!;
+    expect(r).toMatchObject({ status: 'ok', n: 3 });
+    expect(r.geometry).toBeUndefined();
+  });
+  it('«pendiente» nunca lleva geometría ni medidas', () => {
+    const r = cleanRoute(okRoute({ status: 'pending' }), true)!;
+    expect(r).toEqual({ status: 'pending', sig: 'abc', distance: null, duration: null, n: 0 });
+  });
+  it('rechaza estado o huella inválidos y sanea las medidas', () => {
+    expect(cleanRoute(okRoute({ status: 'raro' }), true)).toBeNull();
+    expect(cleanRoute(okRoute({ sig: '' }), true)).toBeNull();
+    expect(cleanRoute(null, true)).toBeNull();
+    expect(cleanRoute('x', true)).toBeNull();
+    expect(cleanRoute(okRoute({ distance: -5, duration: 'x' }), true)).toMatchObject({
+      distance: null,
+      duration: null,
+    });
+  });
+});
+
+describe('rutas en el respaldo', () => {
+  const file = (trips: unknown[]) => ({
+    app: 'Trayecto',
+    version: DATA_VERSION,
+    data: { vehicles: [], places: makePlaces(), trips, fuel: [], settings: {} },
+  });
+  it('parseBackup incorpora ruta y puntos intermedios del viaje', () => {
+    const t = { ...trip(), waypoints: [{ lat: 10.02, lng: 10.01 }], route: okRoute() };
+    const r = parseBackup(file([t]));
+    expect(r.data!.trips[0].waypoints).toEqual([{ lat: 10.02, lng: 10.01 }]);
+    expect(r.data!.trips[0].route!.geometry).toEqual(LINE);
+  });
+  it('un viaje sin ruta ni puntos intermedios no gana esos campos', () => {
+    const r = parseBackup(file([trip()]));
+    expect('route' in r.data!.trips[0]).toBe(false);
+    expect('waypoints' in r.data!.trips[0]).toBe(false);
+  });
+  it('normalize conserva la ruta (con o sin geometría) y quita basura', () => {
+    const d = normalize({
+      trips: [
+        trip({ id: 'a', route: okRoute({ geometry: undefined }) as never }),
+        trip({ id: 'b', route: 'basura' as never, waypoints: 'x' as never }),
+      ],
+    });
+    expect(d.trips[0].route).toMatchObject({ status: 'ok', n: 3 });
+    expect('route' in d.trips[1]).toBe(false);
+    expect('waypoints' in d.trips[1]).toBe(false);
+  });
+  it('routing es una preferencia booleana que parte apagada', () => {
+    expect(normalize().settings.routing).toBe(false);
+    expect(normalize({ settings: { routing: true } }).settings.routing).toBe(true);
+    expect(normalize({ settings: { routing: 'sí' } }).settings.routing).toBe(false);
+  });
+});
+
+describe('stringifyData: dónde vive la geometría', () => {
+  const t = trip({ route: cleanRoute(okRoute(), true)!, waypoints: [{ lat: 10.02, lng: 10.01 }] });
+  const data = { trips: [t] };
+  it('la caché del navegador (por omisión) no lleva geometría pero sí los datos ligeros', () => {
+    const o = JSON.parse(stringifyData(data)).trips[0];
+    expect(o.route).toEqual({ status: 'ok', sig: 'abc', distance: 5234.5, duration: 612.3, n: 3 });
+    expect(o.waypoints).toEqual([{ lat: 10.02, lng: 10.01 }]);
+    expect(stringifyData(data)).not.toContain('coordinates');
+    expect(stringifyData(data)).not.toContain('poly');
+  });
+  it('el archivo lleva la geometría como polyline y no GeoJSON', () => {
+    const txt = stringifyData(data, { routes: 'poly' });
+    const o = JSON.parse(txt).trips[0];
+    expect(o.route.poly).toBe(encodePolyline(LINE.coordinates, 6));
+    expect(o.route.geometry).toBeUndefined();
+    expect(txt).not.toContain('coordinates');
+  });
+  it('archivo → parseBackup devuelve la misma ruta, sin pérdida', () => {
+    const txt = stringifyData(
+      {
+        app: 'Trayecto',
+        version: DATA_VERSION,
+        data: { vehicles: [], places: makePlaces(), trips: [t], fuel: [], settings: {} },
+      },
+      { routes: 'poly', indent: 2 },
+    );
+    const r = parseBackup(JSON.parse(txt));
+    expect(r.data!.trips[0].route).toEqual(t.route);
+    expect(r.data!.trips[0].waypoints).toEqual(t.waypoints);
+  });
+  it('no toca los viajes sin ruta ni modifica el objeto original', () => {
+    const copy = structuredClone(data);
+    stringifyData(data, { routes: 'poly' });
+    expect(data).toEqual(copy);
+    expect(stringifyData({ trips: [trip()] }, { routes: 'poly' })).not.toContain('"route"');
+  });
+  it('points: la caché y el archivo omiten los automáticos; el respaldo manual conserva todos', () => {
+    const p = [{ lat: 1, lng: 1, t: '2024-06-15T08:00:00Z', speed: 5 }];
+    const tr = { trips: [trip({ points: p })] };
+    expect(stringifyData(tr)).not.toContain('"points"');
+    expect(stringifyData(tr, { routes: 'poly' })).not.toContain('"points"');
+    expect(stringifyData(tr, { points: 'all', routes: 'poly' })).toContain('"points"');
+  });
+});
+
+describe('canonKey ignora la geometría y las preferencias de este equipo', () => {
+  const mk = (route?: ReturnType<typeof cleanRoute>, settings = {}) => ({
+    vehicles: [],
+    places: [],
+    fuel: [],
+    trips: [trip(route ? { route } : {})],
+    settings,
+  });
+  it('con y sin geometría da la misma clave; si cambia la huella o el número de vértices, otra', () => {
+    const con = cleanRoute(okRoute(), true)!;
+    const sin = cleanRoute(okRoute({ geometry: undefined }), false)!;
+    expect(canonKey(mk(con))).toBe(canonKey(mk(sin)));
+    expect(canonKey(mk(con))).not.toBe(canonKey(mk({ ...con, sig: 'otra' })));
+    expect(canonKey(mk(con))).not.toBe(canonKey(mk({ ...con, n: 4 })));
+    expect(canonKey(mk(con))).not.toBe(canonKey(mk()));
+  });
+  it('hints, lastBackup y routing no cuentan', () => {
+    expect(canonKey(mk(undefined, { hints: true, lastBackup: 'x', routing: true }))).toBe(
+      canonKey(mk(undefined, { hints: false, lastBackup: null, routing: false })),
+    );
+  });
+});
+
+describe('hydrateRoutes', () => {
+  const withRoute = (id: string, r: unknown) => trip({ id, route: r as never });
+  const cacheRoute = (sig = 'abc') => cleanRoute(okRoute({ sig, geometry: undefined }), false)!;
+  const fileRoute = (sig = 'abc') => cleanRoute(okRoute({ sig }), true)!;
+
+  it('incorpora la geometría del archivo por id y huella', () => {
+    const mem = [withRoute('a', cacheRoute())];
+    const r = hydrateRoutes(mem, [withRoute('a', fileRoute())]);
+    expect(r.attached).toEqual(mem);
+    expect(r.downgraded).toEqual([]);
+    expect(mem[0].route!.geometry).toEqual(LINE);
+    expect(mem[0].route!.status).toBe('ok');
+  });
+  it('si el archivo no la tiene (o la huella cambió), la ruta pasa a «pendiente»', () => {
+    const mem = [
+      withRoute('a', cacheRoute('x')),
+      withRoute('b', cacheRoute()),
+      withRoute('c', cacheRoute()),
+    ];
+    const r = hydrateRoutes(mem, [
+      withRoute('a', fileRoute('otra')),
+      withRoute('c', { ...fileRoute(), status: 'pending' }),
+    ]);
+    expect(r.attached).toEqual([]);
+    expect(r.downgraded).toHaveLength(3);
+    for (const t of mem)
+      expect(t.route).toEqual({
+        status: 'pending',
+        sig: t.route!.sig,
+        distance: null,
+        duration: null,
+        n: 0,
+      });
+  });
+  it('sin archivo (null) todas las rutas sin geometría pasan a «pendiente»', () => {
+    const mem = [withRoute('a', cacheRoute())];
+    expect(hydrateRoutes(mem, null).downgraded).toEqual(mem);
+    expect(mem[0].route!.status).toBe('pending');
+  });
+  it('no toca las que ya tienen geometría, las pendientes ni los viajes sin ruta', () => {
+    const conGeo = withRoute('a', fileRoute());
+    const pend = withRoute('b', {
+      status: 'pending',
+      sig: 'z',
+      distance: null,
+      duration: null,
+      n: 0,
+    });
+    const sinRuta = trip({ id: 'c' });
+    const antes = structuredClone([conGeo, pend, sinRuta]);
+    const r = hydrateRoutes([conGeo, pend, sinRuta], []);
+    expect(r).toEqual({ attached: [], downgraded: [] });
+    expect([conGeo, pend, sinRuta]).toEqual(antes);
   });
 });

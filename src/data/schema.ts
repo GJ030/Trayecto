@@ -2,6 +2,7 @@
  * Modelo de datos: fuente única de verdad. Aquí viven los tipos de los registros, sus constantes,
  * el saneado y la validación. El resto de la aplicación importa los tipos de este archivo.
  */
+import { decodePolyline, encodePolyline } from './polyline';
 import { resolvePoints } from './routes';
 import { validGeo } from '@/shared/utils/geo';
 import { fin } from '@/shared/utils/math';
@@ -67,6 +68,36 @@ export interface RoutePoint {
   t: string;
   speed: number;
 }
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+/** Geometría de una ruta (GeoJSON LineString, puntos como [lng, lat]). */
+export interface RouteLine {
+  type: 'LineString';
+  coordinates: [number, number][];
+}
+/** 'ok' = ruta calculada; 'pending' = no se pudo calcular (se dibuja la recta punteada y se reintenta). */
+export const ROUTE_STATUSES = ['ok', 'pending'] as const;
+export type RouteStatus = (typeof ROUTE_STATUSES)[number];
+/**
+ * Ruta por calles reales de un viaje. La geometría solo se guarda en el archivo de datos (y sus copias):
+ * el localStorage conserva únicamente estos datos ligeros. Con `status: 'ok'` y sin `geometry`, la geometría
+ * aún no se ha cargado del archivo (no es lo mismo que «pendiente»).
+ */
+export interface TripRoute {
+  status: RouteStatus;
+  /** Huella de lo que se pidió (coordenadas de origen, destino y puntos intermedios). */
+  sig: string;
+  /** Metros y segundos que estimó el servicio de ruteo. */
+  distance: number | null;
+  duration: number | null;
+  /** Número de vértices de la geometría (para compararla sin cargarla). */
+  n: number;
+  geometry?: RouteLine;
+}
+/** Máximo de puntos intermedios por viaje. */
+export const MAX_WAYPOINTS = 20;
 export interface Trip {
   id: string;
   date: string;
@@ -82,6 +113,10 @@ export interface Trip {
   pointsSource: PointsSource;
   computerKmpl: number | null;
   computerUnit: ComputerUnit | null;
+  /** Puntos intermedios que fuerzan el camino (opcional). */
+  waypoints?: LatLng[];
+  /** Ruta por calles reales (opcional: solo con «Rutas por calles reales» activado). */
+  route?: TripRoute;
 }
 export interface Fuel {
   id: string;
@@ -101,6 +136,8 @@ export interface Settings {
   computerUnit: ComputerUnit;
   /** Último modo de captura del odómetro usado en el formulario de viaje. */
   odoMode: OdoMode;
+  /** «Rutas por calles reales (usa OSRM)»: preferencia de este equipo, apagada por omisión. */
+  routing: boolean;
 }
 export interface TripFilter {
   tag: 'Todos' | Tag;
@@ -224,6 +261,12 @@ export function normalize(d?: Raw): AppData {
     if (t.pointsSource !== 'auto' && t.pointsSource !== 'imported')
       t.pointsSource = t.points.length ? 'imported' : 'auto';
     Object.assign(t, cleanComputer(t.computerKmpl, t.computerUnit));
+    const r = cleanRoute(t.route, false);
+    if (r) t.route = r;
+    else delete t.route;
+    const w = cleanWaypoints(t.waypoints);
+    if (w.length) t.waypoints = w;
+    else delete t.waypoints;
   });
   o.settings = Object.assign(
     {
@@ -233,10 +276,12 @@ export function normalize(d?: Raw): AppData {
       lastBackup: null,
       computerUnit: 'kmpl',
       odoMode: 'end',
+      routing: false,
     },
     o.settings || {},
   );
   if (!ODO_MODES.includes(o.settings.odoMode)) o.settings.odoMode = 'end';
+  o.settings.routing = o.settings.routing === true;
   o.ui = Object.assign(
     {
       view: 'inicio',
@@ -257,17 +302,133 @@ export function normalize(d?: Raw): AppData {
   o.ui.q = '';
   return o as AppData;
 }
-/* Texto JSON para guardar (localStorage y archivo de datos): las rutas generadas por la app (pointsSource 'auto') no se escriben,
-   son deterministas y se regeneran al leer (migrate / parseBackup). Las rutas importadas sí se guardan. */
-export function stringifyData(v: unknown, indent?: number): string {
+/* ---------------- Rutas por calles reales ---------------- */
+const MAX_ROUTE_VERTICES = 200000;
+const okLngLat = (c: unknown): c is [number, number] =>
+  Array.isArray(c) && c.length >= 2 && validGeo(c[1], c[0]);
+/** Puntos intermedios válidos (como máximo MAX_WAYPOINTS). */
+export function cleanWaypoints(w: unknown): LatLng[] {
+  if (!Array.isArray(w)) return [];
+  return w
+    .filter((p) => p && validGeo(p.lat, p.lng))
+    .slice(0, MAX_WAYPOINTS)
+    .map((p) => ({ lat: p.lat, lng: p.lng }));
+}
+/**
+ * Ruta de un viaje ya saneada, o null si no es utilizable. La geometría puede venir como GeoJSON
+ * (`geometry`) o como polyline de precisión 1e-6 (`poly`, el formato del archivo).
+ * `strict` (archivos e importaciones): se validan todos los vértices y una ruta «ok» sin geometría pasa
+ * a «pendiente». Sin `strict` (caché del navegador, que no guarda geometrías) solo se revisa la forma.
+ */
+export function cleanRoute(r: Raw, strict: boolean): TripRoute | null {
+  if (!r || typeof r !== 'object') return null;
+  if (!ROUTE_STATUSES.includes(r.status) || typeof r.sig !== 'string' || !r.sig) return null;
+  let coords: unknown = null;
+  if (r.geometry && r.geometry.type === 'LineString') coords = r.geometry.coordinates;
+  else if (typeof r.poly === 'string') {
+    try {
+      coords = decodePolyline(r.poly, 6);
+    } catch (e) {
+      coords = null;
+    }
+  }
+  let geometry: RouteLine | undefined;
+  if (Array.isArray(coords) && coords.length <= MAX_ROUTE_VERTICES) {
+    const c = strict ? coords.filter(okLngLat) : coords;
+    if (c.length >= 2 && (strict || okLngLat(c[0])))
+      geometry = {
+        type: 'LineString',
+        coordinates: strict
+          ? c.map(([x, y]) => [x, y] as [number, number])
+          : (c as [number, number][]),
+      };
+  }
+  const num = (v: unknown) => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : null);
+  let status: RouteStatus = r.status;
+  if (status === 'ok' && !geometry && strict) status = 'pending';
+  const keep = status === 'ok' && geometry;
+  return {
+    status,
+    sig: r.sig,
+    distance: status === 'ok' ? num(r.distance) : null,
+    duration: status === 'ok' ? num(r.duration) : null,
+    n: keep
+      ? geometry!.coordinates.length
+      : status === 'ok' && Number.isInteger(r.n) && r.n > 0
+        ? r.n
+        : 0,
+    ...(keep ? { geometry } : {}),
+  };
+}
+/**
+ * Incorpora a los viajes del estado las geometrías que trae el archivo de datos (por id y huella) y pasa a
+ * «pendiente» las rutas «ok» cuya geometría no está en el archivo (`file` null = no hay archivo).
+ * Devuelve los viajes tocados.
+ */
+export function hydrateRoutes(
+  mem: Trip[],
+  file: Trip[] | null,
+): { attached: Trip[]; downgraded: Trip[] } {
+  const byId = new Map((file || []).map((t) => [t.id, t]));
+  const attached: Trip[] = [],
+    downgraded: Trip[] = [];
+  for (const t of mem) {
+    const r = t.route;
+    if (!r || r.status !== 'ok' || r.geometry) continue;
+    const g = byId.get(t.id)?.route;
+    if (g && g.status === 'ok' && g.geometry && g.sig === r.sig) {
+      r.geometry = g.geometry;
+      r.n = g.geometry.coordinates.length;
+      attached.push(t);
+    } else {
+      t.route = { status: 'pending', sig: r.sig, distance: null, duration: null, n: 0 };
+      downgraded.push(t);
+    }
+  }
+  return { attached, downgraded };
+}
+/** ¿Hay rutas «ok» cuya geometría aún no se ha cargado del archivo? */
+export const hasUnloadedRoutes = (trips: Trip[]) =>
+  trips.some((t) => t.route && t.route.status === 'ok' && !t.route.geometry);
+
+/* ---------------- Texto JSON de los datos ---------------- */
+export interface StringifyOpts {
+  /** 'omit-auto' (por omisión): no escribe los points de las rutas generadas por la app, se regeneran al leer. */
+  points?: 'omit-auto' | 'all';
+  /** 'omit' (por omisión, caché del navegador): sin geometrías. 'poly': geometría como polyline 1e-6 (archivo y respaldo). */
+  routes?: 'omit' | 'poly';
+  indent?: number;
+}
+/* Texto JSON para guardar. La caché del navegador (localStorage) no lleva geometrías ni las rutas generadas por la app
+   (points 'auto'); el archivo de datos y el respaldo manual sí llevan la geometría en polyline. */
+export function stringifyData(v: unknown, o: StringifyOpts = {}): string {
+  const all = o.points === 'all',
+    poly = o.routes === 'poly';
   return JSON.stringify(
     v,
-    function (this: Raw, key: string, val: unknown) {
-      return key === 'points' && this && this.pointsSource === 'auto' ? undefined : val;
+    function (this: Raw, key: string, val: Raw) {
+      if (key === 'points' && !all && this && this.pointsSource === 'auto') return undefined;
+      if (key === 'route' && val && typeof val === 'object' && !Array.isArray(val))
+        return {
+          ...val,
+          geometry: undefined,
+          poly: poly && val.geometry ? encodePolyline(val.geometry.coordinates, 6) : undefined,
+        };
+      return val;
     },
-    indent,
+    o.indent,
   );
 }
+/* Clave para comparar dos versiones de los datos: ignora la geometría (solo vive en el archivo; basta su número de
+   vértices) y las preferencias de este equipo (hints, lastBackup, routing) */
+export const canonKey = (d: BackupData) =>
+  JSON.stringify({
+    ...d,
+    trips: d.trips.map((t) =>
+      t.route?.geometry ? { ...t, route: { ...t.route, geometry: undefined } } : t,
+    ),
+    settings: { ...d.settings, hints: undefined, lastBackup: undefined, routing: undefined },
+  });
 /* Validación y saneado de un respaldo ya analizado (importar, leer el archivo de datos y validar antes de escribirlo).
    Devuelve {error} o {data:{vehicles,places,trips,fuel,settings}, raw:{conteos originales}}: lo que no pasa el filtro se descarta y se nota en raw */
 export function parseBackup(o: Raw): ParsedBackup {
@@ -317,11 +478,16 @@ export function parseBackup(o: Raw): ParsedBackup {
         vehicleId: String(t.vehicleId || ''),
         tag: (t.tag === 'Personal' ? 'Personal' : 'Trabajo') as Tag,
       };
-      return Object.assign(
+      const out = Object.assign(
         c,
         cleanComputer(t.computerKmpl, t.computerUnit),
         resolvePoints(c, t.points, t.pointsSource, places),
-      );
+      ) as Trip;
+      const w = cleanWaypoints(t.waypoints),
+        r = cleanRoute(t.route, true);
+      if (w.length) out.waypoints = w;
+      if (r) out.route = r;
+      return out;
     });
   const fuel: Fuel[] = d.fuel
     .filter(

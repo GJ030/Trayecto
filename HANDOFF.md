@@ -44,6 +44,17 @@ El formulario de viaje tiene un interruptor para capturar el odómetro final o l
 
 Un mapa que fallaba (p. ej. el primero tardó más del plazo) se quedaba en «Mapa sin conexión» hasta recargar. Ahora el aviso es un botón **Reintentar**, hay reintento automático con el evento `online`, el primer mapa espera 15 s en vez de 8 y los avisos idénticos no se apilan. Pruebas: `tests/e2e/maps.spec.ts`.
 
+### En curso: rutas por calles reales (OSRM)
+
+Pedido del usuario: todas las rutas siguen las calles reales (OSRM público, `overview=full`), se calculan una sola vez al crear o editar un viaje, se migran los existentes (máx. 1 petición/s con progreso), puntos intermedios editables en el mapa del detalle, respaldo de recta punteada marcado «ruta pendiente», atribución en el mapa, URL en una constante y el estilo visual actual. Decisiones acordadas: interruptor «Rutas por calles reales (usa OSRM)» en Ajustes, apagado, que exige carpeta de datos enlazada con permiso; cálculo en lote con confirmación; texto de privacidad actualizado; geometría solo en el archivo (polyline 1e-6), caché ligera; el recorrido escalonado desaparece; los viajes con ruta calculada sin geometría cargada muestran solo los marcadores (sin línea), la recta punteada es solo para «pendiente».
+
+- Bloque 1 (hecho): `data/routing.ts`, `data/polyline.ts`, modelo y guardado (`stringifyData`, `canonKey`, `hydrateRoutes`), resguardos del archivo (`FS.geoReady`), pruebas unitarias y E2E (`route-storage`, `data-folder`).
+- Bloque 2: `points` derivado de la geometría (`data/routes.ts`), recta punteada como respaldo, marcar «pendiente» al crear, editar, mover o fusionar lugares.
+- Bloque 3: cola con 1 petición/s, cálculo al crear o editar, migración en lote con progreso y confirmación, reintento manual y al volver la conexión, interruptor y texto de privacidad en Ajustes.
+- Bloque 4: dibujar la geometría guardada en todas las vistas del mapa, línea punteada si está pendiente, atribución, mismo color, grosor y glow.
+- Bloque 5: editor de puntos intermedios en el mapa del detalle (clic para agregar, arrastrar para mover, quitar) con recálculo.
+- Bloque 6: documentación final.
+
 ## Entorno
 
 - Node 22, Vite 8 (Rolldown), TypeScript 6, Vitest 5, ESLint 10, Playwright 1.64. Comandos y definición de terminado: ver `CLAUDE.md`.

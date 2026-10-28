@@ -144,7 +144,11 @@ export function adoptData(data: BackupData, keepLastBackup?: boolean) {
     selPair: null,
     tf: { tag: 'Todos', vehicle: 'all', from: '', to: '' },
   };
-  const settings = Object.assign({}, data.settings, { hints: S.settings.hints });
+  /* hints y routing son preferencias de este equipo: un respaldo o el archivo de datos no las cambian (routing envía datos a un servicio externo) */
+  const settings = Object.assign({}, data.settings, {
+    hints: S.settings.hints,
+    routing: S.settings.routing,
+  });
   if (keepLastBackup) settings.lastBackup = S.settings.lastBackup;
   setS(
     normalize({

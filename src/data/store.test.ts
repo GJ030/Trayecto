@@ -227,9 +227,70 @@ describe('guardado sin rutas generadas', () => {
     );
   });
   it('el archivo de datos sin rutas se lee igual que el completo', () => {
-    const slim = JSON.parse(stringifyData(backupPayload(), 2));
+    const slim = JSON.parse(stringifyData(backupPayload(), { indent: 2 }));
     const r = parseBackup(slim);
     expect(r.error).toBeUndefined();
     expect(r.data).toEqual(backupPayload().data);
+  });
+});
+
+describe('rutas por calles reales en el respaldo y en adoptData', () => {
+  const line = {
+    type: 'LineString' as const,
+    coordinates: [
+      [10.000001, 10.000002],
+      [10.01, 10.02],
+      [10.050001, 10.040002],
+    ] as [number, number][],
+  };
+  beforeEach(() => {
+    resetState();
+    S.trips[0].route = {
+      status: 'ok',
+      sig: 'abc',
+      distance: 5234.5,
+      duration: 612.3,
+      n: 3,
+      geometry: line,
+    };
+    S.trips[0].waypoints = [{ lat: 10.02, lng: 10.01 }];
+    S.trips[1].route = { status: 'pending', sig: 'def', distance: null, duration: null, n: 0 };
+  });
+
+  it('el respaldo manual (puntos + polyline) vuelve idéntico con ruta y puntos intermedios', () => {
+    const text = stringifyData(backupPayload(), { points: 'all', routes: 'poly', indent: 2 });
+    const r = parseBackup(JSON.parse(text));
+    expect(r.error).toBeUndefined();
+    expect(r.data).toEqual(backupPayload().data);
+    expect(r.data!.trips[0].route!.geometry).toEqual(line);
+    expect(r.data!.trips[1].route!.status).toBe('pending');
+  });
+  it('importar un respaldo con rutas las incorpora sin consultar a nadie', () => {
+    const r = parseBackup(
+      JSON.parse(stringifyData(backupPayload(), { points: 'all', routes: 'poly' })),
+    );
+    S.trips.length = 0;
+    adoptData(r.data!);
+    expect(S.trips[0].route!.geometry).toEqual(line);
+  });
+  it('un respaldo o archivo no cambia la preferencia routing de este equipo', () => {
+    S.settings.routing = false;
+    adoptData({ vehicles: [], places: [], trips: [], fuel: [], settings: { routing: true } });
+    expect(S.settings.routing).toBe(false);
+    S.settings.routing = true;
+    adoptData({ vehicles: [], places: [], trips: [], fuel: [], settings: { routing: false } });
+    expect(S.settings.routing).toBe(true);
+  });
+  it('lo guardado en la caché pasa por migrate + normalize sin geometría y sin perder los datos ligeros', () => {
+    const loaded = normalize(migrate(JSON.parse(stringifyData(S))));
+    expect(loaded.trips[0].route).toEqual({
+      status: 'ok',
+      sig: 'abc',
+      distance: 5234.5,
+      duration: 612.3,
+      n: 3,
+    });
+    expect(loaded.trips[0].waypoints).toEqual(S.trips[0].waypoints);
+    expect(loaded.trips[1].route).toEqual(S.trips[1].route);
   });
 });

@@ -7,11 +7,28 @@ import { expect, test as base, type Download, type Page } from '@playwright/test
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { encodePolyline } from '../../src/data/polyline';
 import type { AppData } from '../../src/data/schema';
 
 export const APP = pathToFileURL(resolve('dist/trayecto.html')).href;
 
-export const test = base.extend<{ app: Page }>({
+/** La app servida por http://127.0.0.1 (ver webServer en playwright.config.ts): ahí sí existe OPFS, para probar la carpeta de datos. */
+export const APP_HTTP = 'http://127.0.0.1:4173/trayecto.html';
+
+export const test = base.extend<{ app: Page; appHttp: Page }>({
+  appHttp: async ({ page }, use) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    page.on('console', (m) => {
+      if (m.type() === 'error' && !/Failed to load resource|net::ERR_/.test(m.text()))
+        errors.push(m.text());
+    });
+    await page.route(/unpkg\.com|openfreemap\.org|router\.project-osrm\.org/, (r) => r.abort());
+    await page.goto(APP_HTTP);
+    await expect(page.locator('#content .view')).toBeVisible();
+    await use(page);
+    expect(errors).toEqual([]);
+  },
   app: async ({ page }, use) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -20,7 +37,7 @@ export const test = base.extend<{ app: Page }>({
       if (m.type() === 'error' && !/Failed to load resource|net::ERR_/.test(m.text()))
         errors.push(m.text());
     });
-    await page.route(/unpkg\.com|openfreemap\.org/, (r) => r.abort());
+    await page.route(/unpkg\.com|openfreemap\.org|router\.project-osrm\.org/, (r) => r.abort());
     await page.goto(APP);
     await expect(page.locator('#content .view')).toBeVisible();
     await use(page);
@@ -72,4 +89,63 @@ export async function downloadText(page: Page, selector: string) {
     page.click(selector),
   ]);
   return { name: dl.suggestedFilename(), text: readFileSync(await dl.path(), 'utf8') };
+}
+
+/**
+ * Respaldo de prueba con rutas por calles reales (coordenadas ficticias): el viaje «ta» con ruta calculada
+ * (geometría en polyline, como en el archivo) y el «tb» pendiente.
+ */
+export const LINE: [number, number][] = [
+  [10.000001, 10.000002],
+  [10.01, 10.02],
+  [10.03, 10.03],
+  [10.050001, 10.040002],
+];
+export function routeBackup(extraSettings: Record<string, unknown> = {}) {
+  const trip = (id: string, over: Record<string, unknown>) => ({
+    id,
+    date: '2024-06-15',
+    depart: '08:00',
+    arrive: '08:30',
+    origin: 'Alfa',
+    destination: 'Beta',
+    odoStart: 1000,
+    odoEnd: 1012,
+    vehicleId: 'v1',
+    tag: 'Trabajo',
+    ...over,
+  });
+  return JSON.stringify({
+    app: 'Trayecto',
+    version: 2,
+    exportedAt: '2024-06-15T00:00:00Z',
+    data: {
+      vehicles: [{ id: 'v1', name: 'Auto de prueba' }],
+      places: [
+        { id: 'pa', name: 'Alfa', area: '', lat: 10, lng: 10, kind: 'other' },
+        { id: 'pb', name: 'Beta', area: '', lat: 10.04, lng: 10.05, kind: 'other' },
+      ],
+      trips: [
+        trip('ta', {
+          pointsSource: 'auto',
+          route: {
+            status: 'ok',
+            sig: 'sig-ta',
+            distance: 5234.5,
+            duration: 612.3,
+            n: LINE.length,
+            poly: encodePolyline(LINE, 6),
+          },
+          waypoints: [{ lat: 10.02, lng: 10.02 }],
+        }),
+        trip('tb', {
+          date: '2024-06-16',
+          pointsSource: 'auto',
+          route: { status: 'pending', sig: 'sig-tb', distance: null, duration: null, n: 0 },
+        }),
+      ],
+      fuel: [],
+      settings: { defaultVehicle: 'v1', ...extraSettings },
+    },
+  });
 }

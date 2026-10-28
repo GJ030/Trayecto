@@ -129,6 +129,7 @@ export function seed(): SeedData {
       lastBackup: null,
       computerUnit: 'kmpl',
       odoMode: 'end',
+      routing: false,
     },
     ui: {},
   };

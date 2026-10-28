@@ -50,6 +50,32 @@ describe('Store (localStorage)', () => {
     expect(back.trips[0].pointsSource).toBe('auto');
     expect(back.trips[1].points).toEqual(pts);
   });
+  it('no guarda la geometría de las rutas (solo vive en el archivo), pero sí sus datos ligeros', () => {
+    const route = {
+      status: 'ok',
+      sig: 'abc',
+      distance: 100,
+      duration: 20,
+      n: 2,
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [10, 10],
+          [10.1, 10.1],
+        ],
+      },
+    };
+    Store.save({ trips: [{ id: 'a', pointsSource: 'imported', points: [], route }] });
+    expect(ls.getItem('trayecto:v2')).not.toContain('coordinates');
+    const back = Store.load();
+    expect(back.trips[0].route).toEqual({
+      status: 'ok',
+      sig: 'abc',
+      distance: 100,
+      duration: 20,
+      n: 2,
+    });
+  });
   it('lee trayecto:v1 si no hay v2 y lo marca como heredado', () => {
     ls.setItem('trayecto:v1', JSON.stringify({ version: 1 }));
     expect(Store.load()).toEqual({ version: 1 });
