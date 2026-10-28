@@ -3,6 +3,8 @@ import {
   hasRealRoute,
   resolvePoints,
   routeKind,
+  routeNote,
+  routePlan,
   routeStops,
   syncRoute,
   tripPoints,
@@ -370,6 +372,101 @@ describe('routeStops, routeKind y hasRealRoute', () => {
     expect(hasRealRoute({ pointsSource: 'auto', route: { ...ok, geometry: undefined } })).toBe(
       false,
     );
+  });
+});
+
+describe('routePlan: qué se dibuja', () => {
+  const geo = (over = {}) => {
+    const t = trip(over);
+    t.route = routeFor(t, places);
+    t.points = tripPoints(t, places);
+    return t;
+  };
+  it('con geometría calculada: línea sólida, con los marcadores en los extremos de los points', () => {
+    const t = geo();
+    const p = routePlan(t, places)!;
+    expect(p).toMatchObject({ kind: 'geometry', line: 'solid' });
+    expect(p.ends[0]).toEqual({ lat: t.points[0].lat, lng: t.points[0].lng });
+    expect(p.ends[1]).toEqual({
+      lat: t.points[t.points.length - 1].lat,
+      lng: t.points[t.points.length - 1].lng,
+    });
+  });
+  it('sin ruta calculada o pendiente: recta punteada', () => {
+    const t = trip();
+    t.points = tripPoints(t, places);
+    expect(routePlan(t, places)).toMatchObject({ kind: 'straight', line: 'dashed' });
+    t.route = { ...routeFor(t, places), status: 'pending', geometry: undefined };
+    expect(routePlan(t, places)).toMatchObject({ kind: 'straight', line: 'dashed' });
+    t.route.error = 'noroute';
+    expect(routePlan(t, places)).toMatchObject({ kind: 'straight', line: 'dashed' });
+  });
+  it('calculada pero sin la geometría cargada: solo marcadores (no hay points) en origen y destino', () => {
+    const t = geo();
+    t.route = { ...t.route!, geometry: undefined };
+    t.points = tripPoints(t, places);
+    expect(t.points).toEqual([]);
+    expect(routePlan(t, places)).toEqual({
+      kind: 'loading',
+      line: 'none',
+      ends: [
+        { lat: 10, lng: 10 },
+        { lat: 10.04, lng: 10.05 },
+      ],
+    });
+  });
+  it('ruta importada: sólida con sus propios points', () => {
+    const t = trip({ pointsSource: 'imported' });
+    t.points = tripPoints(trip(), places);
+    expect(routePlan(t, places)).toMatchObject({ kind: 'imported', line: 'solid' });
+  });
+  it('sin ubicación en algún extremo (o sin points) no hay nada que dibujar', () => {
+    expect(routePlan(trip({ origin: 'Gama' }), places)).toBeNull();
+    expect(routePlan(trip(), places)).toBeNull();
+    const t = geo();
+    expect(
+      routePlan({ ...t, origin: 'Gama', route: { ...t.route!, geometry: undefined } }, places),
+    ).toBeNull();
+  });
+});
+
+describe('routeNote: aviso del detalle del viaje', () => {
+  const on = { routingOn: true, folderOff: false };
+  const off = { routingOn: false, folderOff: false };
+  const base = () => {
+    const t = trip();
+    return { t, ok: routeFor(t, places) };
+  };
+  it('calculada con geometría: nada que avisar', () => {
+    const { t, ok } = base();
+    expect(routeNote({ ...t, route: ok }, places, on)).toBe('none');
+  });
+  it('pendiente con el interruptor encendido; con él apagado, la invitación a activarlo', () => {
+    const { t, ok } = base();
+    const pend = { ...t, route: { ...ok, status: 'pending' as const, geometry: undefined } };
+    expect(routeNote(pend, places, on)).toBe('pending');
+    expect(routeNote(pend, places, off)).toBe('routingOff');
+    expect(routeNote(t, places, off)).toBe('routingOff');
+    expect(routeNote(t, places, on)).toBe('pending');
+  });
+  it('un error definitivo se avisa aunque el interruptor esté apagado', () => {
+    const { t, ok } = base();
+    const e = (error: 'noroute' | 'invalid') => ({
+      ...t,
+      route: { ...ok, status: 'pending' as const, geometry: undefined, error },
+    });
+    expect(routeNote(e('noroute'), places, on)).toBe('noroute');
+    expect(routeNote(e('invalid'), places, off)).toBe('invalid');
+  });
+  it('geometría sin cargar: pide reconectar solo si el permiso de la carpeta espera confirmación', () => {
+    const { t, ok } = base();
+    const loading = { ...t, route: { ...ok, geometry: undefined } };
+    expect(routeNote(loading, places, { routingOn: true, folderOff: true })).toBe('reconnect');
+    expect(routeNote(loading, places, on)).toBe('none');
+  });
+  it('rutas importadas o viajes sin ubicación: nada que avisar', () => {
+    expect(routeNote(trip({ pointsSource: 'imported' }), places, on)).toBe('none');
+    expect(routeNote(trip({ origin: 'Gama' }), places, on)).toBe('none');
   });
 });
 

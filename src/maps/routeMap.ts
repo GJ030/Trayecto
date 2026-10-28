@@ -5,16 +5,23 @@ import { buildPlacesMap } from './placesMap';
 import { applyPlay } from './play';
 import { failMap, revealMap, type MapEntry } from './registry';
 import type { Map as MlMap } from 'maplibre-gl';
-import type { RoutePoint } from '@/data/schema';
+import { ROUTING } from '@/data/routing';
+import type { LatLng } from '@/data/schema';
 import { ACC } from '@/shared/ui/theme';
 import { esc } from '@/shared/utils/format';
 
 export function buildMap(m: MapEntry) {
   if (m.kind === 'places') return buildPlacesMap(m);
-  const pts = m.pts!,
+  const plan = m.plan,
+    pts = m.pts!,
     reduce = matchMedia('(prefers-reduced-motion: reduce)').matches,
     live = m.mode === 'interactive';
-  const bounds = boundsOf(pts.map(llOf));
+  if (!plan) {
+    failMap(m);
+    return;
+  }
+  /* 'loading' (geometría aún sin cargar) no tiene points: se encuadran el origen y el destino */
+  const bounds = boundsOf((plan.line === 'none' ? plan.ends : pts).map(llOf));
   const pad = Math.max(16, Math.min(46, Math.round((m.host.clientHeight || 160) * 0.16)));
   const fit = {
     padding: { top: pad + 12, bottom: pad, left: pad + 10, right: pad + 10 },
@@ -28,7 +35,7 @@ export function buildMap(m: MapEntry) {
       bounds,
       fitBoundsOptions: fit,
       interactive: live,
-      attributionControl: { compact: true },
+      attributionControl: { compact: true, customAttribution: ROUTING.attribution },
       fadeDuration: reduce ? 0 : 200,
       maxPitch: 0,
       dragRotate: false,
@@ -65,40 +72,48 @@ export function buildMap(m: MapEntry) {
     } /* atribución compacta: solo el botón (i) hasta que se abre */
     const below = map.getStyle().layers.find((l) => l.type === 'symbol')?.id,
       cap = { 'line-cap': 'round', 'line-join': 'round' } as const;
-    map.addSource('route', {
-      type: 'geojson',
-      lineMetrics: true,
-      data: {
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lng, p.lat]) },
-      } as GeoJSON.Feature,
-    });
-    map.addLayer(
-      {
-        id: 'route-halo',
-        type: 'line',
-        source: 'route',
-        layout: cap,
-        paint: {
-          'line-color': ACC,
-          'line-width': live ? 16 : 13,
-          'line-blur': 10,
-          'line-opacity': 0.34,
+    const solid = plan.line === 'solid';
+    if (plan.line !== 'none') {
+      map.addSource('route', {
+        type: 'geojson',
+        lineMetrics: true,
+        data: {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lng, p.lat]) },
+        } as GeoJSON.Feature,
+      });
+      /* calle por calle: halo y degradado de velocidad; recta punteada (sin ruta calculada): un solo trazo del color de acento,
+         porque un degradado no se puede combinar con un patrón de rayas */
+      if (solid)
+        map.addLayer(
+          {
+            id: 'route-halo',
+            type: 'line',
+            source: 'route',
+            layout: cap,
+            paint: {
+              'line-color': ACC,
+              'line-width': live ? 16 : 13,
+              'line-blur': 10,
+              'line-opacity': 0.34,
+            },
+          },
+          below,
+        );
+      map.addLayer(
+        {
+          id: 'route-line',
+          type: 'line',
+          source: 'route',
+          layout: solid ? cap : { 'line-cap': 'butt', 'line-join': 'round' },
+          paint: solid
+            ? { 'line-width': live ? 4.2 : 3.4, 'line-gradient': speedGradient(pts) }
+            : { 'line-width': live ? 4.2 : 3.4, 'line-color': ACC, 'line-dasharray': [2, 2] },
         },
-      },
-      below,
-    );
-    map.addLayer(
-      {
-        id: 'route-line',
-        type: 'line',
-        source: 'route',
-        layout: cap,
-        paint: { 'line-width': live ? 4.2 : 3.4, 'line-gradient': speedGradient(pts) },
-      },
-      below,
-    );
-    const pin = (cls: string, p: RoutePoint, name: string | undefined) => {
+        below,
+      );
+    }
+    const pin = (cls: string, p: LatLng, name: string | undefined) => {
       const el = document.createElement('div');
       el.className = 'tm-pin ' + cls;
       el.innerHTML =
@@ -106,13 +121,14 @@ export function buildMap(m: MapEntry) {
         `<span class="tm-lbl">${esc(name)}</span>`;
       new maplibregl.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(map);
     };
-    pin('tm-start', pts[0], m.o);
-    pin('tm-end', pts[pts.length - 1], m.d);
-    if (live) {
+    pin('tm-start', plan.ends[0], m.o);
+    pin('tm-end', plan.ends[1], m.d);
+    if (live && solid)
       m.host.insertAdjacentHTML(
         'beforeend',
         '<div class="tm-legend"><span>0</span><i></i><span>40+ km/h</span></div>',
       );
+    if (live && plan.line !== 'none') {
       /* capa de la reproducción: tramo recorrido sobre la ruta completa */
       m.ts = pts.map((p) => Date.parse(p.t));
       map.addSource('play', { type: 'geojson', data: EMPTY_FC });

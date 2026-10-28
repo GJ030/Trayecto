@@ -599,6 +599,22 @@ describe('tripsRepo: aplicar resultados de la cola', () => {
     expect(S.trips[0].route).toMatchObject({ status: 'ok', sig, n: 2, distance: 10, duration: 5 });
     expect(tripsRepo.applyRoute('a', sig, res)).toBe(false); // ya no está pendiente
   });
+  it('retryRoute quita el error de un viaje, deja pendiente uno sin ruta y no toca lo demás', () => {
+    setup([mk('a', 'Uno', '2024-06-01'), mk('b', 'Dos', '2024-06-02'), trip({ id: 'c' })]);
+    S.trips[2] = trip({ id: 'c', origin: 'Base', destination: 'Tres' });
+    tripsRepo.failRoute('a', S.trips[0].route!.sig, 'noroute');
+    tripsRepo.applyRoute('b', S.trips[1].route!.sig, res);
+    expect(tripsRepo.retryRoute('a')).toBe(true);
+    expect('error' in S.trips[0].route!).toBe(false);
+    expect(S.trips[0].route!.status).toBe('pending');
+    expect(tripsRepo.retryRoute('b')).toBe(false); // ya calculada
+    expect(tripsRepo.retryRoute('nada')).toBe(false);
+    expect(tripsRepo.retryRoute('c')).toBe(true); // sin ruta con el interruptor encendido
+    expect(S.trips[2].route!.status).toBe('pending');
+    S.settings.routing = false;
+    S.trips[2] = trip({ id: 'c', origin: 'Base', destination: 'Tres' });
+    expect(tripsRepo.retryRoute('c')).toBe(false); // apagado no se crean pendientes
+  });
   it('failRoute marca el error; una edición que cambia la huella lo quita', () => {
     setup([mk('a', 'Uno', '2024-06-01')]);
     const sig = S.trips[0].route!.sig;

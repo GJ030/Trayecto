@@ -1,5 +1,6 @@
 /** Registro de los mapas vivos (MapReg). */
 import type { Map as MlMap, Marker } from 'maplibre-gl';
+import { routePlan, type RoutePlan } from '@/data/routes';
 import type { RoutePoint, Trip } from '@/data/schema';
 import { S } from '@/data/store';
 import { ML, MapLib, mapAssets, mapsOffline } from './loader';
@@ -26,6 +27,8 @@ export interface MapEntry {
   dead: boolean;
   timer: ReturnType<typeof setTimeout> | 0;
   pts: RoutePoint[] | null;
+  /** Qué dibujar del viaje (línea y marcadores); null en el mapa de lugares. */
+  plan: RoutePlan | null;
   o: string | undefined;
   d: string | undefined;
   loaded?: boolean;
@@ -40,12 +43,14 @@ export interface MapEntry {
   fitKey?: string;
 }
 export const MapReg: MapEntry[] = [];
-/* Marcador de posición de un mapa de viaje; sin points válidos devuelve solo el SVG */
+/* Marcador de posición de un mapa de viaje; sin nada que dibujar (sin ubicación) devuelve solo el SVG.
+   La clave de reutilización cambia cuando cambian los points o la forma de dibujarlos (p. ej. llega la geometría). */
 export function tripMapHTML(t: Trip, W: number, H: number, slot: string, mode: string) {
   const svg = routeMap(t.origin, t.destination, W, H),
-    pts = Array.isArray(t.points) ? t.points : [];
-  if (pts.length < 2) return `<div class="map">${svg}</div>`;
-  return `<div class="map" data-tmap="${esc(t.id)}" data-key="${hashStr(JSON.stringify(pts))}" data-slot="${slot}" data-mode="${mode}">${svg}</div>`;
+    plan = routePlan(t, S.places);
+  if (!plan) return `<div class="map">${svg}</div>`;
+  const key = hashStr(JSON.stringify(t.points) + plan.kind + plan.line);
+  return `<div class="map" data-tmap="${esc(t.id)}" data-key="${key}" data-slot="${slot}" data-mode="${mode}">${svg}</div>`;
 }
 /* Antes de reemplazar el HTML de un contenedor: saca los mapas del DOM sin destruirlos (se reclaman o se eliminan en mountMaps) */
 export function parkMaps(root: HTMLElement) {
@@ -155,6 +160,7 @@ function startMap(ph: HTMLElement, root: HTMLElement) {
     dead: false,
     timer: 0,
     pts: t ? t.points : null,
+    plan: t ? routePlan(t, S.places) : null,
     o: t?.origin,
     d: t?.destination,
   };

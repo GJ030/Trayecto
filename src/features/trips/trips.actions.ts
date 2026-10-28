@@ -1,4 +1,5 @@
 /** Acciones de la pantalla Viajes: selección, orden, filtros, edición y eliminación. */
+import { routingQueue, routingStatus } from '@/data/routingQueue';
 import { S, updateUi } from '@/data/store';
 import { registerClick, registerChange, registerKeydown } from '@/shared/ui/actions';
 import { closeDrawer, registerDrawerActions, registerDrawerDelete } from '@/shared/ui/drawer';
@@ -32,6 +33,13 @@ async function deleteTrip(id: string) {
 
 registerClick({
   'new-trip': () => openTripPanel(),
+  /* reintenta la ruta de un viaje y reanuda la cola (también si el usuario la había detenido) */
+  'retry-route': (el) => {
+    if (!tripsRepo.retryRoute(el.dataset.id!)) return;
+    routingQueue.resume();
+    if (routingStatus().state === 'blocked')
+      toast('La carpeta de datos no está disponible: la ruta se calculará al reconectarla');
+  },
   'open-trip': (el) => {
     updateUi({ selTrip: el.dataset.id! }, { silent: true });
     go('viajes');

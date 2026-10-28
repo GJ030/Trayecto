@@ -58,6 +58,56 @@ export const hasRealRoute = (t: Pick<Trip, 'pointsSource' | 'route'>) => {
   return k === 'geometry' || k === 'imported';
 };
 
+/* Qué dibujar de la ruta de un viaje en un mapa (el mismo criterio para los mapas, la tarjeta PNG y la reproducción):
+   'solid' = calle por calle (calculada) o ruta ajena, 'dashed' = recta punteada (sin ruta calculada, pendiente o con error),
+   'none' = solo los marcadores de origen y destino (calculada, con la geometría aún sin cargar del archivo).
+   Un viaje 'loading' tiene points = [], así que no se puede decidir por points.length. */
+export type LineStyle = 'solid' | 'dashed' | 'none';
+export interface RoutePlan {
+  kind: RouteKind;
+  line: LineStyle;
+  /** Origen y destino, donde van los marcadores. */
+  ends: [LatLng, LatLng];
+}
+/** Qué dibujar de un viaje; null si no hay con qué (sin ubicación en algún extremo): queda el SVG esquemático. */
+export function routePlan(
+  t: Pick<Trip, 'pointsSource' | 'route' | 'points' | 'origin' | 'destination'> &
+    Partial<Pick<Trip, 'waypoints'>>,
+  places: Place[],
+): RoutePlan | null {
+  const kind = routeKind(t);
+  if (kind === 'loading') {
+    const stops = routeStops(t, places);
+    return stops ? { kind, line: 'none', ends: [stops[0], stops[stops.length - 1]] } : null;
+  }
+  const pts = Array.isArray(t.points) ? t.points : [];
+  if (pts.length < 2) return null;
+  const e = (p: RoutePoint): LatLng => ({ lat: p.lat, lng: p.lng });
+  return {
+    kind,
+    line: kind === 'straight' ? 'dashed' : 'solid',
+    ends: [e(pts[0]), e(pts[pts.length - 1])],
+  };
+}
+
+/* Qué avisar en el detalle de un viaje sobre su ruta:
+   'pending' = pendiente de calcular (con el interruptor encendido), 'routingOff' = recta porque el interruptor está apagado,
+   'noroute' / 'invalid' = el servicio no pudo calcularla, 'reconnect' = calculada pero su geometría está en la carpeta de datos
+   y el permiso espera confirmación, 'none' = nada que avisar */
+export type RouteNote = 'none' | 'pending' | 'routingOff' | 'noroute' | 'invalid' | 'reconnect';
+export function routeNote(
+  t: Pick<Trip, 'pointsSource' | 'route' | 'origin' | 'destination'> &
+    Partial<Pick<Trip, 'waypoints'>>,
+  places: Place[],
+  o: { routingOn: boolean; folderOff: boolean },
+): RouteNote {
+  if (t.pointsSource === 'imported' || !routeStops(t, places)) return 'none';
+  const r = t.route;
+  if (r?.status === 'ok') return r.geometry || !o.folderOff ? 'none' : 'reconnect';
+  if (r?.error) return r.error;
+  return o.routingOn ? 'pending' : 'routingOff';
+}
+
 /** ¿Hay que pedir su ruta? Viaje de la app con ruta «pendiente» que no falló de forma definitiva. */
 export const needsRoute = (t: Pick<Trip, 'pointsSource' | 'route'>) =>
   t.pointsSource === 'auto' && t.route?.status === 'pending' && !t.route.error;

@@ -233,6 +233,20 @@ export const tripsRepo = {
     if (k) emitChange('trips');
     return k;
   },
+  /** Reintenta la ruta de un viaje de la app: quita su error (o lo deja pendiente si no tenía ruta y el ruteo está activado). */
+  retryRoute(id: string): boolean {
+    const t = S.trips.find((x) => x.id === id);
+    if (!t || t.pointsSource !== 'auto') return false;
+    if (!t.route) {
+      if (!S.settings.routing || !syncRoute(t, S.places, true)) return false;
+    } else if (t.route.status !== 'pending') return false;
+    else if (t.route.error) {
+      t.route = { ...t.route };
+      delete t.route.error;
+    }
+    emitChange('trips');
+    return true;
+  },
   /** Elimina todos los viajes de un vehículo. */
   removeByVehicle(vehicleId: string): number {
     const before = S.trips.length;

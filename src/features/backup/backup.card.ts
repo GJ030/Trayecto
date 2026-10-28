@@ -1,4 +1,7 @@
+import { routePlan } from '@/data/routes';
+import { ROUTING } from '@/data/routing';
 import type { Trip } from '@/data/schema';
+import { S } from '@/data/store';
 import { compOf, fmtComp, tripCost, tripDur, tripKm, tripSpeed } from '@/features/trips/trips.calc';
 import { vehName } from '@/features/vehicles/vehicles.calc';
 import { smoothSpeeds, speedColor } from '@/maps/geo';
@@ -141,13 +144,19 @@ function tripCanvas(t: Trip) {
     x.lineTo(MX + MW, j);
     x.stroke();
   }
-  const real = Array.isArray(t.points) && t.points.length >= 2;
+  /* igual que en los mapas: calle por calle (sólida, con degradado de velocidad), recta punteada si no hay ruta calculada,
+     solo los marcadores si la geometría aún no se carga del archivo, y el esquema si el viaje no tiene ubicación */
+  const plan = routePlan(t, S.places),
+    solid = plan?.line === 'solid',
+    bare = plan?.line === 'none',
+    dashed = !plan || plan.line === 'dashed';
   let tp: { x: number; y: number }[],
     cols: string[] | null = null;
-  if (real) {
-    /* ruta real: lat/lng a km (con la corrección por latitud), encuadrada en el recuadro sin deformarla */
-    const kx = 111.32 * Math.cos((t.points[0].lat * Math.PI) / 180),
-      q = t.points.map((p) => ({ x: p.lng * kx, y: -p.lat * 111.2 }));
+  if (plan) {
+    /* lat/lng a km (con la corrección por latitud), encuadrada en el recuadro sin deformarla */
+    const geo = bare ? plan.ends : t.points,
+      kx = 111.32 * Math.cos((geo[0].lat * Math.PI) / 180),
+      q = geo.map((p) => ({ x: p.lng * kx, y: -p.lat * 111.2 }));
     const x0 = Math.min(...q.map((p) => p.x)),
       x1 = Math.max(...q.map((p) => p.x)),
       y0 = Math.min(...q.map((p) => p.y)),
@@ -159,7 +168,7 @@ function tripCanvas(t: Trip) {
       x: MX + MW / 2 + (p.x - (x0 + x1) / 2) * sc,
       y: MY + MH / 2 + (p.y - (y0 + y1) / 2) * sc,
     }));
-    cols = smoothSpeeds(t.points).map(speedColor);
+    if (solid) cols = smoothSpeeds(t.points).map(speedColor);
   } else {
     const pts = routePts(t.origin, t.destination),
       xs = pts.map((p) => p.x),
@@ -175,13 +184,17 @@ function tripCanvas(t: Trip) {
     x.strokeStyle = col;
     x.lineWidth = w;
     x.lineJoin = 'round';
-    x.lineCap = 'round';
+    x.lineCap = dashed ? 'butt' : 'round';
+    x.setLineDash(dashed ? [11, 9] : []);
     x.beginPath();
     tp.forEach((p, i) => (i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y)));
     x.stroke();
+    x.setLineDash([]);
   };
-  line(14, 'rgba(255,176,32,.18)');
-  if (cols) {
+  if (solid) line(14, 'rgba(255,176,32,.18)');
+  if (bare) {
+    /* sin línea: solo los marcadores de origen y destino */
+  } else if (cols) {
     /* degradado de velocidad: cada tramo va del color de un punto al del siguiente */
     x.lineWidth = 4.5;
     x.lineCap = 'round';
@@ -214,7 +227,7 @@ function tripCanvas(t: Trip) {
   x.arc(b.x, b.y, 8, 0, Math.PI * 2);
   x.fill();
   x.restore();
-  if (real) {
+  if (solid) {
     const ly = MY + MH + 19,
       lg = x.createLinearGradient(MX + 20, 0, MX + 78, 0);
     lg.addColorStop(0, speedColor(0));
@@ -235,6 +248,13 @@ function tripCanvas(t: Trip) {
       MX + MW,
       ly,
     );
+    x.textAlign = 'left';
+  } else {
+    /* sin degradado de velocidad no hay leyenda: se avisa que la ruta es aproximada o que falta cargarla */
+    x.font = `600 13px ${F}`;
+    x.fillStyle = '#8A8A96';
+    x.textAlign = 'right';
+    x.fillText(bare ? 'Ruta aún sin cargar' : 'Ruta aproximada', MX + MW, MY + MH + 19);
     x.textAlign = 'left';
   }
   x.strokeStyle = 'rgba(255,255,255,.08)';
@@ -271,6 +291,13 @@ function tripCanvas(t: Trip) {
   x.fillStyle = '#6E6E7A';
   x.font = `500 16px ${F}`;
   x.fillText('Registrado sin conexión con Trayecto', 76, 556);
+  if (plan?.kind === 'geometry') {
+    /* la geometría viene de OSRM: se atribuye igual que en los mapas */
+    x.font = `500 13px ${F}`;
+    x.textAlign = 'right';
+    x.fillText(ROUTING.attribution, W - 76, 556);
+    x.textAlign = 'left';
+  }
   return c;
 }
 export function downloadTripPNG(t: Trip) {

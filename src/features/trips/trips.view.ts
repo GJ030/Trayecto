@@ -1,3 +1,5 @@
+import { routeNote, type RouteNote } from '@/data/routes';
+import { FS } from '@/data/storage/file';
 import { S } from '@/data/store';
 import { priceOf } from '@/features/fuel/fuel.calc';
 import {
@@ -11,6 +13,7 @@ import {
   tripLiters,
   tripSpeed,
 } from './trips.calc';
+import type { Trip } from '@/data/schema';
 import { vehName } from '@/features/vehicles/vehicles.calc';
 import { playBarHTML } from '@/maps/play';
 import { tripMapHTML } from '@/maps/registry';
@@ -19,6 +22,30 @@ import { icon, tagHTML } from '@/shared/ui/icons';
 import { MONTHS, fmtDate, parseDate } from '@/shared/utils/dates';
 import { MXN, NF0, NF1, cap, durHTML, esc, fmtDurText, fmtKm, money } from '@/shared/utils/format';
 import { sum } from '@/shared/utils/math';
+
+/* Aviso bajo el mapa del detalle cuando la ruta no es calle por calle (o su geometría aún no se ve) */
+const NOTES: Record<Exclude<RouteNote, 'none'>, [text: string, retry: boolean]> = {
+  pending: ['Ruta pendiente de calcular: mientras tanto se muestra una recta aproximada.', true],
+  routingOff: [
+    'Ruta aproximada (recta). Activa «Rutas por calles reales» en Ajustes para seguir las calles.',
+    false,
+  ],
+  noroute: ['Sin camino entre esos puntos: se muestra una recta aproximada.', true],
+  invalid: ['El servicio devolvió una respuesta inválida: se muestra una recta aproximada.', true],
+  reconnect: [
+    'La ruta calculada está en la carpeta de datos. Reconéctala (aviso bajo la barra superior) para verla.',
+    false,
+  ],
+};
+function routeNoteHTML(t: Trip) {
+  const kind = routeNote(t, S.places, {
+    routingOn: S.settings.routing,
+    folderOff: FS.state === 'off',
+  });
+  if (kind === 'none') return '';
+  const [text, retry] = NOTES[kind];
+  return `<div class="route-note" data-route-note="${kind}"><span>${esc(text)}</span>${retry ? `<button class="btn sm" data-action="retry-route" data-id="${esc(t.id)}">Reintentar</button>` : ''}</div>`;
+}
 
 export function renderViajes() {
   if (!S.trips.length)
@@ -73,7 +100,7 @@ export function renderViajes() {
       dur = tripDur(sel);
     detail = `<aside class="card detail" aria-label="Detalle del viaje">
       <div class="detail-head"><div><div class="eyebrow">${esc(cap(fmtDate(sel.date, { weekday: 'long', day: 'numeric', month: 'long' })))}</div><h2 class="detail-title">${esc(sel.origin)}<span class="arrow">→</span>${esc(sel.destination)}</h2></div><button class="icon-btn" data-action="close-detail" aria-label="Cerrar detalle (Esc)" title="Cerrar (Esc)">${icon('x')}</button></div>
-      ${tripMapHTML(sel, 324, 200, 'detalle', 'interactive')}${playBarHTML(sel)}
+      ${tripMapHTML(sel, 324, 200, 'detalle', 'interactive')}${playBarHTML(sel)}${routeNoteHTML(sel)}
       <div class="kv">
         <div><div class="stat-label">${icon('clock', 13)} Duración</div><div class="stat-val md">${durHTML(dur)}</div></div>
         <div><div class="stat-label">${icon('route', 13)} Distancia</div><div class="stat-val md">${fmtKm(km)}<span class="u">km</span></div></div>

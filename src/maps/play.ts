@@ -46,7 +46,8 @@ export function applyPlay(m: MapEntry) {
     /* atenúa la ruta completa mientras se dibuja el recorrido */
     m.playOn = on;
     m.map.setPaintProperty('route-line', 'line-opacity', on ? 0.28 : 1);
-    m.map.setPaintProperty('route-halo', 'line-opacity', on ? 0.12 : 0.34);
+    if (m.map.getLayer('route-halo'))
+      m.map.setPaintProperty('route-halo', 'line-opacity', on ? 0.12 : 0.34);
   }
   if (!on) {
     src.setData(EMPTY_FC);

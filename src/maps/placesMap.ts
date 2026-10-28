@@ -1,6 +1,13 @@
 /** Mapa de lugares con MapLibre y modo ubicación. */
-import type { GeoJSONSource, Map as MlMap, Marker, MapOptions } from 'maplibre-gl';
+import type {
+  ExpressionSpecification,
+  GeoJSONSource,
+  Map as MlMap,
+  Marker,
+  MapOptions,
+} from 'maplibre-gl';
 import { hasRealRoute } from '@/data/routes';
+import { ROUTING } from '@/data/routing';
 import { tripKey, type PairStat, type Trip } from '@/data/schema';
 import { S, requestRender } from '@/data/store';
 import { EMPTY_FC, boundsOf, llOf, speedGradient, type SpeedPoint } from './geo';
@@ -41,16 +48,25 @@ function latestPairTrip(pair: PairStat) {
     )
     .sort((a, b) => tripKey(b).localeCompare(tripKey(a)))[0];
 }
-function pairLine(pair: PairStat): SpeedPoint[] | null {
+/* Línea de un trayecto: la del viaje más reciente con geometría real (`real`: sólida, con degradado de velocidad) o, si
+   ninguno la tiene, la recta entre los lugares (punteada) */
+interface PairLine {
+  pts: SpeedPoint[];
+  real: boolean;
+}
+function pairLine(pair: PairStat): PairLine | null {
   const t = latestPairTrip(pair);
-  if (t) return t.points;
+  if (t) return { pts: t.points, real: true };
   const a = S.places.find((p) => norm(p.name) === norm(pair.from)),
     b = S.places.find((p) => norm(p.name) === norm(pair.to));
   return a && b && validGeo(a.lat, a.lng) && validGeo(b.lat, b.lng)
-    ? [
-        { lat: a.lat as number, lng: a.lng as number, speed: 20 },
-        { lat: b.lat as number, lng: b.lng as number, speed: 20 },
-      ]
+    ? {
+        pts: [
+          { lat: a.lat as number, lng: a.lng as number, speed: 20 },
+          { lat: b.lat as number, lng: b.lng as number, speed: 20 },
+        ],
+        real: false,
+      }
     : null;
 }
 export function buildPlacesMap(m: MapEntry) {
@@ -62,7 +78,7 @@ export function buildPlacesMap(m: MapEntry) {
     center: [-99.16, 19.4],
     zoom: 10,
     interactive: true,
-    attributionControl: { compact: true },
+    attributionControl: { compact: true, customAttribution: ROUTING.attribution },
     fadeDuration: reduce ? 0 : 200,
     maxPitch: 0,
     dragRotate: false,
@@ -157,13 +173,30 @@ export function buildPlacesMap(m: MapEntry) {
       },
       below,
     );
+    /* 'routes' lleva todos los viajes con points: los de geometría real (real = 1) van sólidos; el resto, rectas punteadas */
+    const realF = ['==', ['get', 'real'], 1] as ExpressionSpecification,
+      straightF = ['==', ['get', 'real'], 0] as ExpressionSpecification,
+      relF = ['==', ['get', 'rel'], 1] as ExpressionSpecification,
+      dash = { 'line-dasharray': [2, 2.4] };
     map.addLayer(
       {
         id: 'routes-base',
         type: 'line',
         source: 'routes',
+        filter: realF,
         layout: { ...cap, visibility: 'none' },
         paint: { 'line-color': ACC, 'line-width': 2.6, 'line-opacity': 0.2 },
+      },
+      below,
+    );
+    map.addLayer(
+      {
+        id: 'routes-dash-base',
+        type: 'line',
+        source: 'routes',
+        filter: straightF,
+        layout: { 'line-cap': 'butt', 'line-join': 'round', visibility: 'none' },
+        paint: { 'line-color': ACC, 'line-width': 2.2, 'line-opacity': 0.2, ...dash },
       },
       below,
     );
@@ -187,9 +220,20 @@ export function buildPlacesMap(m: MapEntry) {
         id: 'routes-sel',
         type: 'line',
         source: 'routes',
-        filter: ['==', ['get', 'rel'], 1],
+        filter: ['all', relF, realF],
         layout: { ...cap, visibility: 'none' },
         paint: { 'line-color': ACC, 'line-width': 3, 'line-opacity': 0.85 },
+      },
+      below,
+    );
+    map.addLayer(
+      {
+        id: 'routes-dash-sel',
+        type: 'line',
+        source: 'routes',
+        filter: ['all', relF, straightF],
+        layout: { 'line-cap': 'butt', 'line-join': 'round', visibility: 'none' },
+        paint: { 'line-color': ACC, 'line-width': 2.6, 'line-opacity': 0.85, ...dash },
       },
       below,
     );
@@ -213,6 +257,17 @@ export function buildPlacesMap(m: MapEntry) {
           'line-width': 4.2,
           'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, ACC, 1, ACC],
         },
+      },
+      below,
+    );
+    /* trayecto sin ningún viaje con geometría real: recta punteada (un degradado no se puede combinar con rayas) */
+    map.addLayer(
+      {
+        id: 'pair-dash',
+        type: 'line',
+        source: 'pair-route',
+        layout: { 'line-cap': 'butt', 'line-join': 'round', visibility: 'none' },
+        paint: { 'line-color': ACC, 'line-width': 3.2, 'line-opacity': 0.9, ...dash },
       },
       below,
     );
@@ -252,11 +307,11 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
       map.getSource<GeoJSONSource>(id)!.setData(build());
     }
   };
-  set('routes', withPts.map((t) => tripSig(t) + rel(t)).join('|'), () => ({
+  set('routes', withPts.map((t) => tripSig(t) + rel(t) + hasRealRoute(t)).join('|'), () => ({
     type: 'FeatureCollection',
     features: withPts.map((t) => ({
       type: 'Feature',
-      properties: { rel: rel(t) ? 1 : 0 },
+      properties: { rel: rel(t) ? 1 : 0, real: hasRealRoute(t) ? 1 : 0 },
       geometry: { type: 'LineString', coordinates: t.points.map(llOf) },
     })),
   }));
@@ -275,7 +330,8 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
   );
   const fl = freq
     .map((p) => [p, pairLine(p)] as const)
-    .filter((x): x is readonly [PairStat, SpeedPoint[]] => !!x[1]);
+    .filter((x): x is readonly [PairStat, PairLine] => !!x[1])
+    .map(([p, l]) => [p, l.pts] as const);
   set(
     'pairs',
     fl.map(([p, l]) => p.key + l.length + l[0].lat + l[l.length - 1].lng).join('|'),
@@ -288,10 +344,13 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
       })),
     }),
   );
-  const pl = selPair && pairLine(selPair);
+  const pair = selPair && pairLine(selPair),
+    pl = pair ? pair.pts : null;
   set(
     'pair-route',
-    selPair ? selPair.key + (pl ? pl.length + pl[0].lat + pl[pl.length - 1].lng : '') : '',
+    selPair
+      ? selPair.key + (pl ? `${pl.length}${pl[0].lat}${pl[pl.length - 1].lng}${pair!.real}` : '')
+      : '',
     () =>
       pl
         ? ({
@@ -300,15 +359,18 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
           } as unknown as GeoJSON.Feature)
         : EMPTY_FC,
   );
-  if (pl) map.setPaintProperty('pair-line', 'line-gradient', speedGradient(pl));
+  if (pl && pair!.real) map.setPaintProperty('pair-line', 'line-gradient', speedGradient(pl));
   const vs = (id: string, on: boolean) =>
     map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
   vs('heat', layer === 'calor');
   vs('routes-base', layer === 'rutas');
+  vs('routes-dash-base', layer === 'rutas');
   vs('pairs-dash', layer === 'lugares');
   vs('routes-sel', !!selP);
-  vs('pair-halo', !!pl);
-  vs('pair-line', !!pl);
+  vs('routes-dash-sel', !!selP);
+  vs('pair-halo', !!pair?.real);
+  vs('pair-line', !!pair?.real);
+  vs('pair-dash', !!pair && !pair.real);
   /* la densidad crece con el historial: con muchos points se baja el peso y el radio, con pocos se sube; lo mismo con la opacidad de las rutas */
   const np = realPts.reduce((n, t) => n + t.points.length, 0),
     nt = withPts.length || 1,
@@ -334,7 +396,9 @@ export function refreshPlaces(m: MapEntry, first?: boolean) {
   }
   map.setPaintProperty('routes-base', 'line-width', nt > 150 ? 2 : 2.6);
   map.setPaintProperty('routes-base', 'line-opacity', selP ? ro * 0.35 : ro);
+  map.setPaintProperty('routes-dash-base', 'line-opacity', selP ? ro * 0.35 : ro);
   map.setPaintProperty('routes-sel', 'line-opacity', selPair ? 0.3 : 0.85);
+  map.setPaintProperty('routes-dash-sel', 'line-opacity', selPair ? 0.3 : 0.85);
   map.setPaintProperty('pairs-dash', 'line-opacity', selP ? 0.14 : 0.28);
   map.setPaintProperty('heat', 'heatmap-opacity', selP ? 0.4 : 0.9);
   /* pines: se recrean (pocos) con tamaño según visitas y estado de selección */

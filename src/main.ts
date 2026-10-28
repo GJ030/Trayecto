@@ -18,6 +18,7 @@ import '@/shared/ui/empty.css';
 import '@/shared/ui/drawer.css';
 import '@/shared/ui/modal.css';
 import '@/features/trips/trips-computer.css';
+import '@/features/trips/trips-route.css';
 import '@/features/places/places-menu.css';
 import '@/shared/ui/toast.css';
 import '@/features/backup/backup-folder.css';
