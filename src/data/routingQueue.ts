@@ -70,8 +70,8 @@ export function routeCounts(trips: readonly Trip[]): RouteCounts {
   }
   return c;
 }
-/** Tiempo aproximado (ms) de pedir `n` rutas a una por segundo (más la respuesta de la última). */
-export const routeEta = (n: number) => n * ROUTING.minIntervalMs;
+/** Tiempo aproximado (ms) de pedir `n` rutas a una por segundo (como máximo: los viajes con los mismos puntos no se piden dos veces). */
+export const routeEta = (n: number) => n * (ROUTING.minIntervalMs + ROUTING.safetyMs);
 
 const q = {
   running: false,
@@ -127,6 +127,43 @@ export function routingStatus(): RoutingStatus {
   };
 }
 
+/**
+ * Consultas distintas que haría falta enviar para dejar con ruta a los viajes de la app que aún no la tienen (sin ruta o
+ * pendientes sin error): los viajes con exactamente los mismos puntos comparten una sola consulta, y los que coinciden
+ * con una ruta ya calculada no envían nada.
+ */
+export function distinctRequests(): number {
+  const have = new Set<string>(),
+    need = new Set<string>();
+  for (const t of S.trips)
+    if (t.pointsSource === 'auto' && t.route?.status === 'ok' && t.route.geometry)
+      have.add(t.route.sig);
+  for (const t of S.trips) {
+    if (t.pointsSource !== 'auto' || (t.route && (t.route.status === 'ok' || t.route.error)))
+      continue;
+    const stops = routeStops(t, S.places);
+    if (!stops) continue;
+    const sig = routeSig(stops);
+    if (!have.has(sig)) need.add(sig);
+  }
+  return need.size;
+}
+/* Ruta ya calculada (con geometría) de otro viaje con exactamente los mismos puntos: se reutiliza sin enviar nada */
+function reusable(sig: string) {
+  for (const t of S.trips) {
+    const r = t.route;
+    if (
+      t.pointsSource === 'auto' &&
+      r?.status === 'ok' &&
+      r.sig === sig &&
+      r.geometry &&
+      r.distance != null &&
+      r.duration != null
+    )
+      return { geometry: r.geometry, distance: r.distance, duration: r.duration };
+  }
+  return null;
+}
 /* Espera `ms`; se interrumpe antes si se detiene la cola o vuelve la conexión */
 const sleep = (ms: number) =>
   new Promise<void>((res) => {
@@ -150,8 +187,14 @@ async function run() {
       const next = pendingRoutes()[0];
       if (!next) return setState('idle');
       if (!guard()) return setState('blocked');
+      /* mismos puntos que un viaje ya calculado: se copia la ruta, sin petición ni espera */
+      const same = reusable(next.route!.sig);
+      if (same) {
+        if (sink?.apply(next.id, next.route!.sig, same)) q.done++;
+        continue;
+      }
       /* como máximo una petición por segundo */
-      const gap = q.lastStart + ROUTING.minIntervalMs - Date.now();
+      const gap = q.lastStart + ROUTING.minIntervalMs + ROUTING.safetyMs - Date.now();
       if (gap > 0) {
         setState('waiting', Date.now() + gap);
         await sleep(gap);
@@ -170,8 +213,10 @@ async function run() {
         if (ctl.signal.aborted || err.kind === 'aborted')
           return setState(q.stopped ? 'stopped' : 'idle');
         if (err.kind === 'noroute' || err.kind === 'invalid' || err.kind === 'input') {
-          /* sin camino o respuesta inválida: error definitivo, reintento manual */
-          if (sink?.fail(next.id, sig, err.kind === 'noroute' ? 'noroute' : 'invalid')) q.failed++;
+          /* sin camino o respuesta inválida: error definitivo, reintento manual; vale para todos los viajes con los mismos puntos */
+          const kind = err.kind === 'noroute' ? 'noroute' : 'invalid';
+          for (const t of pendingRoutes())
+            if (t.route!.sig === sig && sink?.fail(t.id, sig, kind)) q.failed++;
           q.streak = 0;
           continue;
         }

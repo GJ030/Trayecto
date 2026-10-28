@@ -16,6 +16,8 @@ export const ROUTING = {
   profile: 'driving',
   /** Separación mínima entre dos peticiones. */
   minIntervalMs: 1000,
+  /** Margen extra sobre la separación mínima, por la imprecisión de los temporizadores (no pasar nunca de 1 petición por segundo). */
+  safetyMs: 50,
   timeoutMs: 15000,
   attribution: 'Rutas: OSRM · © OpenStreetMap contributors',
   /** Espera creciente (duplica en cada fallo) ante fallos recuperables: sin conexión, tiempo agotado, HTTP 429 o 5xx. */

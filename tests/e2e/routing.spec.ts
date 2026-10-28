@@ -84,6 +84,7 @@ const fast = (page: Page, ms = 40) =>
       retry: { baseMs: number; rateLimitBaseMs: number; maxStreak: number };
     };
     c.minIntervalMs = m;
+    (c as unknown as { safetyMs: number }).safetyMs = 0;
     c.retry.baseMs = 20;
     c.retry.rateLimitBaseMs = 60;
   }, ms);
@@ -91,6 +92,9 @@ const tripKey = (t: Trip) => t.date + ' ' + t.depart;
 const routes = async (page: Page) => (await getState(page)).trips.map((t) => t.route);
 const countOk = async (page: Page) => (await routes(page)).filter((r) => r?.status === 'ok').length;
 const N = async (page: Page) => (await getState(page)).trips.length;
+/** Trayectos distintos (origen → destino): los viajes con los mismos puntos comparten una sola consulta. */
+const distinct = async (page: Page) =>
+  new Set((await getState(page)).trips.map((t) => t.origin + '→' + t.destination)).size;
 
 /** Activa el interruptor y elige «calcular los viajes registrados». */
 async function enableAll(page: Page) {
@@ -125,7 +129,9 @@ test.describe('con carpeta de datos', () => {
     appHttp,
   }) => {
     const osrm = await stubOsrm(appHttp);
-    const total = await N(appHttp);
+    const total = await N(appHttp),
+      consultas = await distinct(appHttp);
+    expect(consultas).toBeLessThan(total);
     await goTo(appHttp, 'ajustes', 'Ajustes');
     await appHttp.click('#rtSwitch');
     const body = appHttp.locator('#mBody');
@@ -133,7 +139,8 @@ test.describe('con carpeta de datos', () => {
     await expect(body).toContainText('router.project-osrm.org');
     const all = appHttp.locator('.choice[data-m="0"]');
     await expect(all).toContainText(`${total} viajes registrados`);
-    await expect(all).toContainText(`unos ${total} s`); // a una petición por segundo
+    await expect(all).toContainText(`unos ${Math.round(consultas * 1.05)} s`); // a una petición por segundo, solo las consultas distintas
+    await expect(all).toContainText('comparten una sola consulta');
     await expect(all).toContainText('más recientes');
     await appHttp.click('[data-m="x"]'); // cancelar: no se activa ni se envía nada
     expect((await getState(appHttp)).settings.routing).toBe(false);
@@ -146,7 +153,8 @@ test.describe('con carpeta de datos', () => {
   }) => {
     const osrm = await stubOsrm(appHttp, { delay: 60 });
     await fast(appHttp);
-    const total = await N(appHttp);
+    const total = await N(appHttp),
+      consultas = await distinct(appHttp);
     await enableAll(appHttp);
     await expect(appHttp.locator('#rtStatus')).toContainText(/Calculando rutas… \d+ de \d+/);
     await expect.poll(() => countOk(appHttp), { timeout: 30000 }).toBe(total);
@@ -157,7 +165,7 @@ test.describe('con carpeta de datos', () => {
     await expect(appHttp.locator('#toasts')).toContainText(`Rutas calculadas: ${total}`);
 
     // formato de la petición, orden y ritmo
-    expect(osrm.requests).toHaveLength(total);
+    expect(osrm.requests).toHaveLength(consultas); // los viajes con los mismos puntos no se piden dos veces
     for (const r of osrm.requests)
       expect(r.url).toMatch(
         /\/route\/v1\/driving\/-?[\d.]+,-?[\d.]+;-?[\d.]+,-?[\d.]+\?overview=full&geometries=geojson&steps=false$/,
@@ -201,11 +209,11 @@ test.describe('con carpeta de datos', () => {
   test('Detener cancela la tanda, lo calculado se queda y al relanzar sigue con los que faltan', async ({
     appHttp,
   }) => {
-    await stubOsrm(appHttp, { delay: 250 });
+    await stubOsrm(appHttp, { delay: 600 });
     await fast(appHttp, 40);
     const total = await N(appHttp);
     await enableAll(appHttp);
-    await expect.poll(() => countOk(appHttp), { timeout: 20000 }).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => countOk(appHttp), { timeout: 20000 }).toBeGreaterThanOrEqual(1);
     await appHttp.click('[data-action=rt-stop]');
     await expect(appHttp.locator('#rtStatus')).toContainText('Detenido. Faltan');
     const done = await countOk(appHttp);
@@ -224,33 +232,44 @@ test.describe('con carpeta de datos', () => {
   }) => {
     const osrm = await stubOsrm(appHttp, { mode: (n) => (n === 1 ? 'noroute' : 'ok') });
     await fast(appHttp);
-    const total = await N(appHttp);
+    const total = await N(appHttp),
+      consultas = await distinct(appHttp);
     await enableAll(appHttp);
-    await expect.poll(() => countOk(appHttp), { timeout: 30000 }).toBe(total - 1);
-    await expect(appHttp.locator('#rtCounts')).toContainText('1 con error');
+    await expect
+      .poll(
+        async () =>
+          (await getState(appHttp)).trips.filter((t) => t.route?.status === 'ok' || t.route?.error)
+            .length,
+        { timeout: 30000 },
+      )
+      .toBe(total);
+    // falló una consulta (la segunda): vale para todos los viajes con esos mismos puntos
     const withError = (await getState(appHttp)).trips.filter((t) => t.route?.error);
-    expect(withError).toHaveLength(1);
+    expect(withError.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(withError.map((t) => t.origin + '→' + t.destination)).size).toBe(1);
     expect(withError[0].route).toMatchObject({ status: 'pending', error: 'noroute' });
-    expect(osrm.requests).toHaveLength(total);
+    expect(await countOk(appHttp)).toBe(total - withError.length);
+    await expect(appHttp.locator('#rtCounts')).toContainText(`${withError.length} con error`);
+    expect(osrm.requests).toHaveLength(consultas);
     // volver la conexión y recargar no lo reintentan
     await appHttp.evaluate(() => window.dispatchEvent(new Event('online')));
     await appHttp.waitForTimeout(300);
-    expect(osrm.requests).toHaveLength(total);
+    expect(osrm.requests).toHaveLength(consultas);
     await appHttp.reload();
     await expect(appHttp.locator('#content .view')).toBeVisible();
     await appHttp.waitForTimeout(300);
-    expect(osrm.requests).toHaveLength(total);
+    expect(osrm.requests).toHaveLength(consultas);
     expect(
       (await getState(appHttp)).trips.filter((t) => t.route?.error === 'noroute'),
-    ).toHaveLength(1);
-    // reintento manual
+    ).toHaveLength(withError.length);
+    // reintento manual: una sola consulta para todos los que comparten esos puntos
     osrm.mode = () => 'ok';
     await fast(appHttp);
     await goTo(appHttp, 'ajustes', 'Ajustes');
     await appHttp.click('[data-action=rt-retry-errors]');
     await confirmModal(appHttp);
     await expect.poll(() => countOk(appHttp), { timeout: 15000 }).toBe(total);
-    expect(osrm.requests).toHaveLength(total + 1);
+    expect(osrm.requests).toHaveLength(consultas + 1);
   });
 
   test('sin conexión, 429 y 5xx se reintentan con espera creciente hasta lograrlo', async ({
@@ -260,10 +279,11 @@ test.describe('con carpeta de datos', () => {
       mode: (n) => (n === 0 ? '503' : n === 1 ? '429' : n === 2 ? 'abort' : 'ok'),
     });
     await fast(appHttp);
-    const total = await N(appHttp);
+    const total = await N(appHttp),
+      consultas = await distinct(appHttp);
     await enableAll(appHttp);
     await expect.poll(() => countOk(appHttp), { timeout: 30000 }).toBe(total);
-    expect(osrm.requests.length).toBe(total + 3); // 3 reintentos
+    expect(osrm.requests.length).toBe(consultas + 3); // 3 reintentos
     const gaps = osrm.requests.slice(1, 4).map((r, i) => r.at - osrm.requests[i].at);
     expect(gaps[1]).toBeGreaterThan(gaps[0]); // la espera crece
     expect((await getState(appHttp)).trips.some((t) => t.route?.error)).toBe(false); // nada quedó como error definitivo

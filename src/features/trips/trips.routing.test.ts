@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { routeStops } from '@/data/routes';
 import { ROUTING, routeSig } from '@/data/routing';
 import {
+  distinctRequests,
   onRoutingFinish,
   pendingRoutes,
   resetRoutingQueue,
@@ -199,6 +200,94 @@ describe('la cola: ritmo y orden', () => {
     expect(calls.map((c) => c.to)).toEqual(['10.01,10.01', '10.02,10.02']);
     expect(S.trips[0].route!.status).toBe('ok');
     expect(S.trips[0].destination).toBe('Dos');
+  });
+});
+
+describe('viajes con los mismos puntos', () => {
+  it('comparten una sola consulta: los demás copian la geometría sin enviar nada', async () => {
+    setup([
+      mk('a', 'Uno', '2024-06-01'),
+      mk('b', 'Uno', '2024-06-02'),
+      mk('c', 'Dos', '2024-06-03'),
+      mk('d', 'Uno', '2024-06-04'),
+    ]);
+    const { calls } = fakeFetch();
+    expect(distinctRequests()).toBe(2);
+    routingQueue.kick();
+    await flush(5 * SEC);
+    expect(calls.map((c) => c.to)).toEqual(['10.01,10.01', '10.02,10.02']); // dos consultas para cuatro viajes
+    expect(S.trips.map((t) => t.route!.status)).toEqual(['ok', 'ok', 'ok', 'ok']);
+    const g = (id: string) => S.trips.find((t) => t.id === id)!.route!;
+    expect(g('a').geometry).toEqual(g('d').geometry);
+    expect(g('b').distance).toBe(g('d').distance);
+    expect(g('a').geometry).not.toEqual(g('c').geometry);
+    for (const t of S.trips) expect(t.points.length).toBeGreaterThanOrEqual(60);
+  });
+  it('un viaje nuevo con los mismos puntos que uno ya calculado no envía nada', async () => {
+    setup([mk('a', 'Uno', '2024-06-01')]);
+    startRoutingQueue();
+    const { calls } = fakeFetch();
+    routingQueue.kick();
+    await flush(2 * SEC);
+    expect(calls).toHaveLength(1);
+    const t = tripsRepo.create({
+      date: '2024-07-01',
+      depart: '08:00',
+      arrive: '08:30',
+      origin: 'Base',
+      destination: 'Uno',
+      odoStart: 1,
+      odoEnd: 10,
+      vehicleId: 'v1',
+      tag: 'Trabajo',
+    });
+    await flush(5 * SEC);
+    expect(calls).toHaveLength(1);
+    expect(t.route!.status).toBe('ok');
+  });
+  it('«sin camino» vale para todos los viajes con los mismos puntos y se pide una sola vez', async () => {
+    setup([
+      mk('a', 'Uno', '2024-06-01'),
+      mk('b', 'Uno', '2024-06-02'),
+      mk('c', 'Dos', '2024-06-03'),
+    ]);
+    const { calls } = fakeFetch((_n, url) =>
+      url.includes(';10.01,10.01') ? json({ code: 'NoRoute' }) : json(okReply(url)),
+    );
+    routingQueue.kick();
+    await flush(6 * SEC);
+    expect(calls).toHaveLength(2);
+    expect(S.trips.map((t) => [t.route!.status, t.route!.error])).toEqual([
+      ['pending', 'noroute'],
+      ['pending', 'noroute'],
+      ['ok', undefined],
+    ]);
+    expect(routingStatus().counts).toEqual({ ok: 1, pending: 0, error: 2 });
+  });
+  it('no cuenta consultas para los viajes con error ni para los que ya coinciden con una ruta calculada', () => {
+    setup([
+      mk('a', 'Uno', '2024-06-01'),
+      mk('b', 'Dos', '2024-06-02'),
+      trip({ id: 'c', origin: 'Base', destination: 'Tres' }),
+    ]);
+    S.trips[1].route = { ...S.trips[1].route!, error: 'noroute' };
+    expect(distinctRequests()).toBe(2); // «Uno» y «Tres» (sin ruta aún); «Dos» tiene error
+    S.trips[0].route = {
+      ...S.trips[0].route!,
+      status: 'ok',
+      distance: 1,
+      duration: 1,
+      n: 2,
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [10, 10],
+          [10.01, 10.01],
+        ],
+      },
+    };
+    S.trips.push(trip({ id: 'd', origin: 'Base', destination: 'Uno' }));
+    expect(distinctRequests()).toBe(1); // solo «Tres»: «Uno» ya está calculado
   });
 });
 

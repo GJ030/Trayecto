@@ -7,6 +7,7 @@ import {
   routingQueue,
   routingStatus,
   pendingRoutes,
+  distinctRequests,
 } from '@/data/routingQueue';
 import { routeStops } from '@/data/routes';
 import { fsLinked } from '@/data/storage/file';
@@ -19,6 +20,7 @@ import { esc } from '@/shared/utils/format';
 import { settingsRepo } from './settings.repo';
 
 const SENT = 'las coordenadas de origen, destino y puntos intermedios';
+const SHARED = ' (los viajes con los mismos puntos comparten una sola consulta)';
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 /** «unos 40 s», «unos 3 min» */
 export const fmtEta = (ms: number) => {
@@ -110,7 +112,7 @@ onRoutingFinish(({ done, failed }) => {
 const confirmSend = (n: number, ok: string) =>
   confirmDialog({
     title: `¿Calcular ${plural(n, 'ruta', 'rutas')}?`,
-    body: `Se enviarán ${SENT} de ${plural(n, 'viaje', 'viajes')} a ${routingHost()} (servidor público de OSRM). A una petición por segundo tardará ${fmtEta(routeEta(n))}. Puedes detenerlo cuando quieras: lo ya calculado se queda y después sigue con los que faltan. Nada más se envía.`,
+    body: `Se enviarán ${SENT} de ${plural(n, 'viaje', 'viajes')} a ${routingHost()} (servidor público de OSRM). A una petición por segundo tardará ${fmtEta(routeEta(distinctRequests() || n))}${SHARED}. Puedes detenerlo cuando quieras: lo ya calculado se queda y después sigue con los que faltan. Nada más se envía.`,
     ok,
     danger: false,
   });
@@ -147,7 +149,7 @@ export async function toggleRouting() {
         title: `Activar y calcular ${plural(n, 'viaje registrado', 'viajes registrados')}`,
         lines: [
           `Se enviarán los datos de ${plural(n, 'viaje', 'viajes')} a ${routingHost()}.`,
-          `A una petición por segundo tardará ${fmtEta(routeEta(n))}. Empieza por los más recientes; puedes detenerlo cuando quieras y lo ya calculado se queda.`,
+          `A una petición por segundo tardará ${fmtEta(routeEta(distinctRequests() || n))}${SHARED}. Empieza por los más recientes; puedes detenerlo cuando quieras y lo ya calculado se queda.`,
         ],
       },
       {
