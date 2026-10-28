@@ -4,3 +4,8 @@ test-results/
 playwright-report/
 tools/parity/baseline.html
 tools/parity/*.json
+
+# Datos del usuario: carpeta de datos de la app, sus respaldos y exportaciones JSON
+/Datos App Trayecto Info Usuario/
+trayecto-*.json
+respaldos/
