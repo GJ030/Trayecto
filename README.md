@@ -15,8 +15,8 @@ Se construye como **un solo archivo HTML autocontenido** (`dist/trayecto.html`) 
 - **Vehículos, ajustes y respaldo:** varios vehículos, respaldo y restauración en JSON.
 - **Rutas por calles reales** dibujadas en los mapas; sin conexión, la app sigue funcionando con mapas SVG esquemáticos.
 
-| Viajes | Estadísticas |
-| --- | --- |
+| Viajes                     | Estadísticas                           |
+| -------------------------- | -------------------------------------- |
 | ![Viajes](docs/viajes.png) | ![Estadísticas](docs/estadisticas.png) |
 
 > Las capturas usan los datos de ejemplo que incluye la app; las ubicaciones son ficticias.
@@ -26,6 +26,7 @@ Se construye como **un solo archivo HTML autocontenido** (`dist/trayecto.html`) 
 Los datos se guardan en `localStorage` y, opcionalmente, en un archivo `trayecto-datos.json` dentro de una carpeta que tú eliges (Chrome/Edge). Lo único que usa internet son los mapas (MapLibre y OpenFreeMap) y el cálculo de rutas.
 
 ## Tecnologías
+
 
 TypeScript (modo estricto) · Vite + `vite-plugin-singlefile` · MapLibre GL · Vitest · Playwright · ESLint + Prettier
 
