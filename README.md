@@ -27,7 +27,6 @@ Los datos se guardan en `localStorage` y, opcionalmente, en un archivo `trayecto
 
 ## Tecnologías
 
-
 TypeScript (modo estricto) · Vite + `vite-plugin-singlefile` · MapLibre GL · Vitest · Playwright · ESLint + Prettier
 
 ## Cómo ejecutarlo
